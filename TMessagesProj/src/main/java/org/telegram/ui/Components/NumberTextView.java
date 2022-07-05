@@ -246,6 +246,6 @@ public class NumberTextView extends View {
 
     @Override
     public CharSequence getContentDescription() {
-if(currentNumber>0) return currentNumber+"" else return null;
+if(currentNumber>0) return currentNumber+""; else return null;
     }
 }
