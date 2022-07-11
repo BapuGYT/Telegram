@@ -13685,6 +13685,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 }
             }
         }
+        if(currentFocusedVirtualView==-1) sendAccessibilityEventForVirtualView(-1,AccessibilityEvent.TYPE_ANNOUNCEMENT,(progress*100)+"%");
     }
 
     @Override
@@ -13705,6 +13706,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             lastLoadingSizeTotal = totalSize;
         }
         createLoadingProgressLayout(uploadedSize, totalSize);
+        if(currentFocusedVirtualView==-1) sendAccessibilityEventForVirtualView(-1,AccessibilityEvent.TYPE_ANNOUNCEMENT,(progress*100)+"%");
     }
 
     private void createLoadingProgressLayout(TLRPC.Document document) {
@@ -19763,15 +19765,26 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         return layoutHeight;
     }
 private void clear() {
-        if(!touch) currentFocusedVirtualView=-2; else touch=false;
+        if(!touch) {
+            //sendAccessibilityEventForVirtualView(currentFocusedVirtualView,AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED);
+currentFocusedVirtualView = -2;
+        }
+else touch=false;
         }
     @Override
     public boolean performAccessibilityAction(int action, Bundle arguments) {
         if (delegate != null && delegate.onAccessibilityAction(action, arguments)) {
             return false;
         }
-        if(action==AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS) currentFocusedVirtualView=-1;
-        else if(action==AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS) clear();
+        if(action==AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS) {
+            currentFocusedVirtualView=-1;
+            sendAccessibilityEventForVirtualView(-1,AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED);
+            return true;
+        }
+        else if(action==AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS) {
+            clear();
+            return true;
+        }
         /*else if(action==AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD &&arguments !=null &&arguments.getBoolean(actionInList)) return numberOfNodes<0 ||currentFocusedVirtualView<0?false:getAccessibilityNodeProvider().performAction(currentFocusedVirtualView,action,arguments);
         else if(action==AccessibilityNodeInfo.ACTION_SCROLL_FORWARD &&arguments !=null &&arguments.getBoolean(actionInList)) {
             if(numberOfNodes<0) return false;
@@ -19834,6 +19847,22 @@ private void clear() {
     }
 
     @Override
+    public void onInitializeAccessibilityEvent(AccessibilityEvent event) {
+        event.setPackageName(getContext().getPackageName());
+        event.setSource(ChatMessageCell.this, currentFocusedVirtualView);
+        event.setEnabled(true);
+        event.setScrollX(getScrollX());
+        event.setScrollY(getScrollY());
+        if(seekBarAccessibilityDelegate!=null &&currentFocusedVirtualView==-1) seekBarAccessibilityDelegate.onInitializeAccessibilityEvent(ChatMessageCell.this,event);
+        CharSequence accText =getIterableTextForAccessibility();
+        if(event.getText().size() ==0) event.setContentDescription(accText);
+            }
+
+    @Override
+    public void onPopulateAccessibilityEvent(AccessibilityEvent event) {
+    }
+
+    @Override
     public boolean onHoverEvent(MotionEvent event) {
         int x = (int) event.getX();
         int y = (int) event.getY();
@@ -19856,7 +19885,10 @@ if(currentFocusedVirtualView!=-1) {
 }
         } else if (event.getAction() == MotionEvent.ACTION_HOVER_EXIT) {
 currentFocusedVirtualView=-2;
+touch = false;
         }
+        touch =false;
+        currentFocusedVirtualView=-2;
         return super.onHoverEvent(event);
     }
 private boolean isSeekbarCell() {
@@ -19866,17 +19898,14 @@ private boolean isSeekbarCell() {
 public int[] getCoords(Boolean back) {
         if(accessibilityVirtualViewBounds.size() ==0) return null;
         int pos=back?currentFocusedVirtualView-1:currentFocusedVirtualView+1;
-        if(back &&currentFocusedVirtualView<-1) pos=accessibilityVirtualViewBounds.size()-1;
-        //if(pos<0 &&back) pos=accessibilityVirtualViewBounds.size()-1;
-        //else if(pos>=accessibilityVirtualViewBounds.size() &&!back) pos=-1;
+        if(back &&currentFocusedVirtualView==-2) pos=accessibilityVirtualViewBounds.size()-1;
         if(pos<0 ||pos>=accessibilityVirtualViewBounds.size()) return null;
         int[] loc=new int[2];
         getLocationOnScreen(loc);
         //whether two lines below ok,to compute coordinates for scrolling?
-        /*loc[0]-=getPaddingRight()-getPaddingLeft();
-        loc[1]-=getPaddingBottom()-getPaddingTop();*/
-                return new int[] {accessibilityVirtualViewBounds.get(pos).left+loc[0],accessibilityVirtualViewBounds.get(pos).top+loc[1]};
-}
+    if(accessibilityVirtualViewBounds.get(pos)==null) return null;
+                return new int[] {accessibilityVirtualViewBounds.get(pos).left+loc[0]+getScrollX()-getPaddingRight()-getPaddingLeft(),accessibilityVirtualViewBounds.get(pos).top+loc[1]+getScrollY()-getPaddingBottom()-getPaddingTop()};
+                        }
 //To support diferents granularities for talkback. See sources of View class in android sdk sources.
     public CharSequence getIterableTextForAccessibility() {
             SpannableStringBuilder sb = new SpannableStringBuilder();
@@ -20076,14 +20105,15 @@ public int[] getCoords(Boolean back) {
         AccessibilityManager am = (AccessibilityManager) getContext().getSystemService(Context.ACCESSIBILITY_SERVICE);
         if (am.isTouchExplorationEnabled()) {
             AccessibilityEvent event = AccessibilityEvent.obtain(eventType);
-            event.setPackageName(getContext().getPackageName());
-            event.setSource(ChatMessageCell.this, viewId);
-            if (text != null) {
+            if (text != null &&text.length()>0) {
                 event.getText().add(text);
             }
-            if (getParent() != null) {
-                getParent().requestSendAccessibilityEvent(ChatMessageCell.this, event);
+            if(eventType ==AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED ||eventType==AccessibilityEvent.TYPE_VIEW_FOCUSED &&numberOfNodes>=0) {
+                //if numberOfNodes >=0 we have at least one subnode.
+                event.setItemCount(numberOfNodes+1);
+                event.setCurrentItemIndex(viewId);
             }
+sendAccessibilityEventUnchecked(event);
         }
     }
 
@@ -20780,9 +20810,12 @@ public int[] getCoords(Boolean back) {
                     StringBuilder sb = new StringBuilder(button.title.getText());
                     if (!pollVoted) {
                         info.setClassName("android.widget.Button");
-                    } else {
-                        info.setSelected(button.chosen);
                         sb.append(", ").append(button.percent).append("%");
+                    }
+                    else {
+                        //Even for closed poll we should add percentage too.
+                        if(pollClosed) sb.append(", ").append(button.percent).append("%");
+                        info.setSelected(button.chosen);
                         if (lastPoll != null && lastPoll.quiz && (button.chosen || button.correct)) {
                             sb.append(", ").append(button.correct ? LocaleController.getString("AccDescrQuizCorrectAnswer", R.string.AccDescrQuizCorrectAnswer) : LocaleController.getString("AccDescrQuizIncorrectAnswer", R.string.AccDescrQuizIncorrectAnswer));
                         }
@@ -20879,7 +20912,10 @@ public int[] getCoords(Boolean back) {
             if (virtualViewId == HOST_VIEW_ID &&(arguments ==null ||!arguments.getBoolean(actionInList))) {
                 performAccessibilityAction(action, arguments);
             } else {
-                if(action== AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS) clear();
+                if(action== AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS) {
+                    clear();
+                    return true;
+                }
 if(action == AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS) {
                     currentFocusedVirtualView=virtualViewId;
                     sendAccessibilityEventForVirtualView(virtualViewId, AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED);
