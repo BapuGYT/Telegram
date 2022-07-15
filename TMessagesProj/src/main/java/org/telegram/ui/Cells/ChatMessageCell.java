@@ -478,9 +478,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
         default void didPressUserAvatar(ChatMessageCell cell, TLRPC.User user, float touchX, float touchY) {
         }
-
-        default boolean didLongPressUserAvatar(ChatMessageCell cell, TLRPC.User user, float touchX, float touchY) {
+        default boolean didLongPressUserAvatar(ChatMessageCell cell, TLRPC.User user, float touchX, float touchY,boolean accessibility) {
             return false;
+        }
+        default boolean didLongPressUserAvatar(ChatMessageCell cell, TLRPC.User user, float touchX, float touchY) {
+            return didLongPressUserAvatar(cell,user,touchX,touchY,false);
         }
 
         default void didPressHiddenForward(ChatMessageCell cell) {
@@ -495,8 +497,12 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         default void didPressChannelAvatar(ChatMessageCell cell, TLRPC.Chat chat, int postId, float touchX, float touchY) {
         }
 
-        default boolean didLongPressChannelAvatar(ChatMessageCell cell, TLRPC.Chat chat, int postId, float touchX, float touchY) {
+        default boolean didLongPressChannelAvatar(ChatMessageCell cell, TLRPC.Chat chat, int postId, float touchX, float touchY,boolean accessibility) {
             return false;
+        }
+
+        default boolean didLongPressChannelAvatar(ChatMessageCell cell, TLRPC.Chat chat, int postId, float touchX, float touchY) {
+            return didLongPressChannelAvatar(cell,chat,postId,touchX,touchY,false);
         }
 
         default void didPressCancelSendButton(ChatMessageCell cell) {
@@ -600,7 +606,12 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         }
 
         default boolean drawingVideoPlayerContainer() {
-            return false;
+        default String getAdminRank(long uid,boolean accessibility) {
+            return null;
+        }
+
+        default String getAdminRank(long uid) {
+return getAdminRank(uid,false);
         }
 
         default boolean canPerformActions() {
@@ -19764,13 +19775,13 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     public int getLayoutHeight() {
         return layoutHeight;
     }
-private void clear() {
+    private void clear() {
         if(!touch) {
             //sendAccessibilityEventForVirtualView(currentFocusedVirtualView,AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED);
-currentFocusedVirtualView = -2;
+            currentFocusedVirtualView = -2;
         }
-else touch=false;
-        }
+        else touch=false;
+    }
     @Override
     public boolean performAccessibilityAction(int action, Bundle arguments) {
         if (delegate != null && delegate.onAccessibilityAction(action, arguments)) {
@@ -19829,6 +19840,9 @@ else touch=false;
                 }
             }
         }
+        else if(action==R.id.acc_action_user_or_channel &&delegate!=null) {
+if(currentUser!=null)delegate.didLongPressUserAvatar(ChatMessageCell.this,currentUser,lastTouchX,lastTouchY,true); else delegate.didLongPressChannelAvatar(ChatMessageCell.this,currentChat,0,lastTouchX,lastTouchY,true);
+        }
         if (isSeekbarCell()) {
             if (seekBarAccessibilityDelegate.performAccessibilityActionInternal(action, arguments)) {
                 return true;
@@ -19856,7 +19870,7 @@ else touch=false;
         if(seekBarAccessibilityDelegate!=null &&currentFocusedVirtualView==-1) seekBarAccessibilityDelegate.onInitializeAccessibilityEvent(ChatMessageCell.this,event);
         CharSequence accText =getIterableTextForAccessibility();
         if(event.getText().size() ==0) event.setContentDescription(accText);
-            }
+    }
 
     @Override
     public void onPopulateAccessibilityEvent(AccessibilityEvent event) {
@@ -19878,24 +19892,26 @@ else touch=false;
                     }
                     return true;
                 }
-}
-if(currentFocusedVirtualView!=-1) {
-    currentFocusedVirtualView=-1;
-    touch=true;
-}
+            }
+            if(currentFocusedVirtualView!=-1) {
+                currentFocusedVirtualView=-1;
+                touch=true;
+                sendAccessibilityEventForVirtualView(-1, AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED);
+            }
+        return true;
         } else if (event.getAction() == MotionEvent.ACTION_HOVER_EXIT) {
-currentFocusedVirtualView=-2;
-touch = false;
+            currentFocusedVirtualView=-2;
+            touch = false;
         }
         touch =false;
         currentFocusedVirtualView=-2;
         return super.onHoverEvent(event);
     }
-private boolean isSeekbarCell() {
+    private boolean isSeekbarCell() {
         return currentMessageObject!=null &&(currentMessageObject.isVoice() || currentMessageObject.isRoundVideo() || currentMessageObject.isMusic() && MediaController.getInstance().isPlayingMessage(currentMessageObject));
-}
-//Getting coordinates for accessibility scrolling.
-public int[] getCoords(Boolean back) {
+    }
+    //Getting coordinates for accessibility scrolling.
+    public int[] getCoords(Boolean back) {
         if(accessibilityVirtualViewBounds.size() ==0) return null;
         int pos=back?currentFocusedVirtualView-1:currentFocusedVirtualView+1;
         if(back &&currentFocusedVirtualView==-2) pos=accessibilityVirtualViewBounds.size()-1;
@@ -19903,192 +19919,199 @@ public int[] getCoords(Boolean back) {
         int[] loc=new int[2];
         getLocationOnScreen(loc);
         //whether two lines below ok,to compute coordinates for scrolling?
-    if(accessibilityVirtualViewBounds.get(pos)==null) return null;
-                return new int[] {accessibilityVirtualViewBounds.get(pos).left+loc[0]+getScrollX()-getPaddingRight()-getPaddingLeft(),accessibilityVirtualViewBounds.get(pos).top+loc[1]+getScrollY()-getPaddingBottom()-getPaddingTop()};
-                        }
-//To support diferents granularities for talkback. See sources of View class in android sdk sources.
+        if(accessibilityVirtualViewBounds.get(pos)==null) return null;
+        return new int[] {accessibilityVirtualViewBounds.get(pos).left+loc[0]+getScrollX()-getPaddingRight()-getPaddingLeft(),accessibilityVirtualViewBounds.get(pos).top+loc[1]+getScrollY()-getPaddingBottom()-getPaddingTop()};
+    }
+    //To support diferents granularities for talkback. See sources of View class in android sdk sources.
     public CharSequence getIterableTextForAccessibility() {
-            SpannableStringBuilder sb = new SpannableStringBuilder();
-            if (isChat && currentUser != null && !currentMessageObject.isOut()) {
-                sb.append(UserObject.getUserName(currentUser));
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        if (isChat && !currentMessageObject.isOut()) {
+            if(currentUser !=null) {
+sb.append(UserObject.getUserName(currentUser));
                 sb.setSpan(new ProfileSpan(currentUser), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                sb.append('\n');
             }
-            //add information,if something write from channel,but not from user name (it can do,for example,channel creators).
-            else if(currentUser ==null && currentMessageObject.customName !=null &&currentMessageObject.customName.length()>0) sb.append(currentMessageObject.customName+"\n");
-            if (drawForwardedName) {
-                for (int a = 0; a < 2; a++) {
-                    if (forwardedNameLayout[a] != null) {
-                        sb.append(forwardedNameLayout[a].getText());
-                        sb.append(a == 0 ? " " : "\n");
-                    }
+            else if(currentChat !=null &&currentMessageObject.isFromGroup()) {
+sb.append(currentChat.title);
+                sb.setSpan(new ProfileSpan(currentChat), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            sb.append('\n');
+
+        }
+        //add information,if something write from channel,but not from user name (it can do,for example,channel creators).
+        else if(currentUser ==null && currentMessageObject.customName !=null &&currentMessageObject.customName.length()>0) sb.append(currentMessageObject.customName+"\n");
+        if (drawForwardedName) {
+            for (int a = 0; a < 2; a++) {
+                if (forwardedNameLayout[a] != null) {
+                    sb.append(forwardedNameLayout[a].getText());
+                    sb.append(a == 0 ? " " : "\n");
                 }
             }
-            if (!TextUtils.isEmpty(currentMessageObject.messageText)) {
-                sb.append(currentMessageObject.messageText);
-            }
-            if (documentAttach != null && (documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT || documentAttachType == DOCUMENT_ATTACH_TYPE_GIF || documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO)) {
-                if (buttonState == 1 && loadingProgressLayout != null) {
-                    sb.append("\n");
-                    final boolean sending = currentMessageObject.isSending();
-                    final String key = sending ? "AccDescrUploadProgress" : "AccDescrDownloadProgress";
-                    final int resId = sending ? R.string.AccDescrUploadProgress : R.string.AccDescrDownloadProgress;
-                    sb.append(LocaleController.formatString(key, resId, AndroidUtilities.formatFileSize(currentMessageObject.loadedFileSize), AndroidUtilities.formatFileSize(lastLoadingSizeTotal)));
-                }
-            }
-            if (currentMessageObject.isMusic()) {
+        }
+        if (!TextUtils.isEmpty(currentMessageObject.messageText)) {
+            sb.append(currentMessageObject.messageText);
+        }
+        if (documentAttach != null && (documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT || documentAttachType == DOCUMENT_ATTACH_TYPE_GIF || documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO)) {
+            if (buttonState == 1 && loadingProgressLayout != null) {
                 sb.append("\n");
-                sb.append(LocaleController.formatString("AccDescrMusicInfo", R.string.AccDescrMusicInfo, currentMessageObject.getMusicAuthor(), currentMessageObject.getMusicTitle()));
-                sb.append(", ");
-                sb.append(LocaleController.formatDuration(currentMessageObject.getDuration()));
-            } else if (currentMessageObject.isVoice() || isRoundVideo) {
-                sb.append(", ");
-                sb.append(LocaleController.formatDuration(currentMessageObject.getDuration()));
-                sb.append(", ");
-                if (currentMessageObject.isContentUnread()) {
-                    sb.append(LocaleController.getString("AccDescrMsgNotPlayed", R.string.AccDescrMsgNotPlayed));
+                final boolean sending = currentMessageObject.isSending();
+                final String key = sending ? "AccDescrUploadProgress" : "AccDescrDownloadProgress";
+                final int resId = sending ? R.string.AccDescrUploadProgress : R.string.AccDescrDownloadProgress;
+                sb.append(LocaleController.formatString(key, resId, AndroidUtilities.formatFileSize(currentMessageObject.loadedFileSize), AndroidUtilities.formatFileSize(lastLoadingSizeTotal)));
+            }
+        }
+        if (currentMessageObject.isMusic()) {
+            sb.append("\n");
+            sb.append(LocaleController.formatString("AccDescrMusicInfo", R.string.AccDescrMusicInfo, currentMessageObject.getMusicAuthor(), currentMessageObject.getMusicTitle()));
+            sb.append(", ");
+            sb.append(LocaleController.formatDuration(currentMessageObject.getDuration()));
+        } else if (currentMessageObject.isVoice() || isRoundVideo) {
+            sb.append(", ");
+            sb.append(LocaleController.formatDuration(currentMessageObject.getDuration()));
+            sb.append(", ");
+            if (currentMessageObject.isContentUnread()) {
+                sb.append(LocaleController.getString("AccDescrMsgNotPlayed", R.string.AccDescrMsgNotPlayed));
+            } else {
+                sb.append(LocaleController.getString("AccDescrMsgPlayed", R.string.AccDescrMsgPlayed));
+            }
+        }
+        if (lastPoll != null) {
+            sb.append(", ");
+            sb.append(lastPoll.question);
+            sb.append(", ");
+            String title;
+            if (pollClosed) {
+                title = LocaleController.getString("FinalResults", R.string.FinalResults);
+            } else {
+                if (lastPoll.quiz) {
+                    if (lastPoll.public_voters) {
+                        title = LocaleController.getString("QuizPoll", R.string.QuizPoll);
+                    } else {
+                        title = LocaleController.getString("AnonymousQuizPoll", R.string.AnonymousQuizPoll);
+                    }
+                } else if (lastPoll.public_voters) {
+                    title = LocaleController.getString("PublicPoll", R.string.PublicPoll);
                 } else {
-                    sb.append(LocaleController.getString("AccDescrMsgPlayed", R.string.AccDescrMsgPlayed));
+                    title = LocaleController.getString("AnonymousPoll", R.string.AnonymousPoll);
                 }
             }
-            if (lastPoll != null) {
+            sb.append(title);
+        }
+        if (currentMessageObject.isVoiceTranscriptionOpen()) {
+            sb.append("\n");
+            sb.append(currentMessageObject.getVoiceTranscription());
+        }
+        //even if we switch on voice transcription,we should announce caption too.
+        if (currentMessageObject.messageOwner.media != null && !TextUtils.isEmpty(currentMessageObject.caption)) {
+            sb.append("\n");
+            sb.append(currentMessageObject.caption);
+        }
+        if (documentAttach != null) {
+            if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO) {
                 sb.append(", ");
-                sb.append(lastPoll.question);
+                sb.append(LocaleController.formatDuration(currentMessageObject.getDuration()));
+            }
+            if (buttonState == 0 || documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {
                 sb.append(", ");
-                String title;
-                if (pollClosed) {
-                    title = LocaleController.getString("FinalResults", R.string.FinalResults);
+                sb.append(AndroidUtilities.formatFileSize(documentAttach.size));
+            }
+        }
+        if (currentMessageObject.isOut()) {
+            if (currentMessageObject.isSent()) {
+                sb.append("\n");
+                if (currentMessageObject.scheduled) {
+                    sb.append(LocaleController.formatString("AccDescrScheduledDate", R.string.AccDescrScheduledDate, currentTimeString));
                 } else {
-                    if (lastPoll.quiz) {
-                        if (lastPoll.public_voters) {
-                            title = LocaleController.getString("QuizPoll", R.string.QuizPoll);
-                        } else {
-                            title = LocaleController.getString("AnonymousQuizPoll", R.string.AnonymousQuizPoll);
+                    sb.append(LocaleController.formatString("AccDescrSentDate", R.string.AccDescrSentDate, LocaleController.getString("TodayAt", R.string.TodayAt) + " " + currentTimeString));
+                    sb.append(", ");
+                    sb.append(currentMessageObject.isUnread() ? LocaleController.getString("AccDescrMsgUnread", R.string.AccDescrMsgUnread) : LocaleController.getString("AccDescrMsgRead", R.string.AccDescrMsgRead));
+                }
+            } else if (currentMessageObject.isSending()) {
+                sb.append("\n");
+                sb.append(LocaleController.getString("AccDescrMsgSending", R.string.AccDescrMsgSending));
+                final float sendingProgress = radialProgress.getProgress();
+                if (sendingProgress > 0f) {
+                    sb.append(", ").append(Integer.toString(Math.round(sendingProgress * 100))).append("%");
+                }
+            } else if (currentMessageObject.isSendError()) {
+                sb.append("\n");
+                sb.append(LocaleController.getString("AccDescrMsgSendingError", R.string.AccDescrMsgSendingError));
+            }
+        } else {
+            sb.append("\n");
+            sb.append(LocaleController.formatString("AccDescrReceivedDate", R.string.AccDescrReceivedDate, LocaleController.getString("TodayAt", R.string.TodayAt) + " " + currentTimeString));
+        }
+        if (getRepliesCount() > 0 && !hasCommentLayout()) {
+            sb.append("\n");
+            sb.append(LocaleController.formatPluralString("AccDescrNumberOfReplies", getRepliesCount()));
+        }
+        if (currentMessageObject.messageOwner.reactions != null && currentMessageObject.messageOwner.reactions.results != null) {
+            if (currentMessageObject.messageOwner.reactions.results.size() == 1) {
+                TLRPC.TL_reactionCount reaction = currentMessageObject.messageOwner.reactions.results.get(0);
+                if (reaction.count == 1) {
+                    sb.append("\n");
+                    boolean isMe = false;
+                    String userName = "";
+                    if (currentMessageObject.messageOwner.reactions.recent_reactions != null && currentMessageObject.messageOwner.reactions.recent_reactions.size() == 1) {
+                        TLRPC.TL_messagePeerReaction recentReaction = currentMessageObject.messageOwner.reactions.recent_reactions.get(0);
+                        if (recentReaction != null) {
+                            TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(MessageObject.getPeerId(recentReaction.peer_id));
+                            isMe = UserObject.isUserSelf(user);
+                            if (user != null) {
+                                userName = UserObject.getFirstName(user);
+                            }
                         }
-                    } else if (lastPoll.public_voters) {
-                        title = LocaleController.getString("PublicPoll", R.string.PublicPoll);
+                    }
+                    if (isMe) {
+                        sb.append(LocaleController.formatString("AccDescrYouReactedWith", R.string.AccDescrYouReactedWith, reaction.reaction));
                     } else {
-                        title = LocaleController.getString("AnonymousPoll", R.string.AnonymousPoll);
+                        sb.append(LocaleController.formatString("AccDescrReactedWith", R.string.AccDescrReactedWith, userName, reaction.reaction));
                     }
-                }
-                sb.append(title);
-            }
-            if (currentMessageObject.isVoiceTranscriptionOpen()) {
-                sb.append("\n");
-                sb.append(currentMessageObject.getVoiceTranscription());
-            }
-            //even if we switch on voice transcription,we should announce caption too.
-            if (currentMessageObject.messageOwner.media != null && !TextUtils.isEmpty(currentMessageObject.caption)) {
-                sb.append("\n");
-                sb.append(currentMessageObject.caption);
-            }
-            if (documentAttach != null) {
-                if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO) {
-                    sb.append(", ");
-                    sb.append(LocaleController.formatDuration(currentMessageObject.getDuration()));
-                }
-                if (buttonState == 0 || documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {
-                    sb.append(", ");
-                    sb.append(AndroidUtilities.formatFileSize(documentAttach.size));
-                }
-            }
-            if (currentMessageObject.isOut()) {
-                if (currentMessageObject.isSent()) {
+                } else if (reaction.count > 1) {
                     sb.append("\n");
-                    if (currentMessageObject.scheduled) {
-                        sb.append(LocaleController.formatString("AccDescrScheduledDate", R.string.AccDescrScheduledDate, currentTimeString));
-                    } else {
-                        sb.append(LocaleController.formatString("AccDescrSentDate", R.string.AccDescrSentDate, LocaleController.getString("TodayAt", R.string.TodayAt) + " " + currentTimeString));
-                        sb.append(", ");
-                        sb.append(currentMessageObject.isUnread() ? LocaleController.getString("AccDescrMsgUnread", R.string.AccDescrMsgUnread) : LocaleController.getString("AccDescrMsgRead", R.string.AccDescrMsgRead));
-                    }
-                } else if (currentMessageObject.isSending()) {
-                    sb.append("\n");
-                    sb.append(LocaleController.getString("AccDescrMsgSending", R.string.AccDescrMsgSending));
-                    final float sendingProgress = radialProgress.getProgress();
-                    if (sendingProgress > 0f) {
-                        sb.append(", ").append(Integer.toString(Math.round(sendingProgress * 100))).append("%");
-                    }
-                } else if (currentMessageObject.isSendError()) {
-                    sb.append("\n");
-                    sb.append(LocaleController.getString("AccDescrMsgSendingError", R.string.AccDescrMsgSendingError));
+                    sb.append(LocaleController.formatPluralString("AccDescrNumberOfPeopleReactions", reaction.count, reaction.reaction));
                 }
             } else {
-                sb.append("\n");
-                sb.append(LocaleController.formatString("AccDescrReceivedDate", R.string.AccDescrReceivedDate, LocaleController.getString("TodayAt", R.string.TodayAt) + " " + currentTimeString));
-            }
-            if (getRepliesCount() > 0 && !hasCommentLayout()) {
-                sb.append("\n");
-                sb.append(LocaleController.formatPluralString("AccDescrNumberOfReplies", getRepliesCount()));
-            }
-            if (currentMessageObject.messageOwner.reactions != null && currentMessageObject.messageOwner.reactions.results != null) {
-                if (currentMessageObject.messageOwner.reactions.results.size() == 1) {
-                    TLRPC.TL_reactionCount reaction = currentMessageObject.messageOwner.reactions.results.get(0);
-                    if (reaction.count == 1) {
-                        sb.append("\n");
-                        boolean isMe = false;
-                        String userName = "";
-                        if (currentMessageObject.messageOwner.reactions.recent_reactions != null && currentMessageObject.messageOwner.reactions.recent_reactions.size() == 1) {
-                            TLRPC.TL_messagePeerReaction recentReaction = currentMessageObject.messageOwner.reactions.recent_reactions.get(0);
-                            if (recentReaction != null) {
-                                TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(MessageObject.getPeerId(recentReaction.peer_id));
-                                isMe = UserObject.isUserSelf(user);
-                                if (user != null) {
-                                    userName = UserObject.getFirstName(user);
-                                }
-                            }
-                        }
-                        if (isMe) {
-                            sb.append(LocaleController.formatString("AccDescrYouReactedWith", R.string.AccDescrYouReactedWith, reaction.reaction));
-                        } else {
-                            sb.append(LocaleController.formatString("AccDescrReactedWith", R.string.AccDescrReactedWith, userName, reaction.reaction));
-                        }
-                    } else if (reaction.count > 1) {
-                        sb.append("\n");
-                        sb.append(LocaleController.formatPluralString("AccDescrNumberOfPeopleReactions", reaction.count, reaction.reaction));
-                    }
-                } else {
-                    sb.append(LocaleController.getString("Reactions", R.string.Reactions)).append((": "));
-                    final int count = currentMessageObject.messageOwner.reactions.results.size();
-                    for (int i = 0; i < count; ++i) {
-                        TLRPC.TL_reactionCount reactionCount = currentMessageObject.messageOwner.reactions.results.get(i);
-                        if (reactionCount != null) {
-                            sb.append(reactionCount.reaction).append(" ").append(reactionCount.count + "");
-                            if (i + 1 < count) {
-                                sb.append(", ");
-                            }
+                sb.append(LocaleController.getString("Reactions", R.string.Reactions)).append((": "));
+                final int count = currentMessageObject.messageOwner.reactions.results.size();
+                for (int i = 0; i < count; ++i) {
+                    TLRPC.TL_reactionCount reactionCount = currentMessageObject.messageOwner.reactions.results.get(i);
+                    if (reactionCount != null) {
+                        sb.append(reactionCount.reaction).append(" ").append(reactionCount.count + "");
+                        if (i + 1 < count) {
+                            sb.append(", ");
                         }
                     }
-                    sb.append("\n");
                 }
-            }
-            if ((currentMessageObject.messageOwner.flags & TLRPC.MESSAGE_FLAG_HAS_VIEWS) != 0) {
                 sb.append("\n");
-                sb.append(LocaleController.formatPluralString("AccDescrNumberOfViews", currentMessageObject.messageOwner.views));
             }
+        }
+        if ((currentMessageObject.messageOwner.flags & TLRPC.MESSAGE_FLAG_HAS_VIEWS) != 0) {
             sb.append("\n");
+            sb.append(LocaleController.formatPluralString("AccDescrNumberOfViews", currentMessageObject.messageOwner.views));
+        }
+        sb.append("\n");
 
-            CharacterStyle[] links = sb.getSpans(0, sb.length(), ClickableSpan.class);
+        CharacterStyle[] links = sb.getSpans(0, sb.length(), ClickableSpan.class);
 
-            for (CharacterStyle link : links) {
-                int start = sb.getSpanStart(link);
-                int end = sb.getSpanEnd(link);
-                sb.removeSpan(link);
+        for (CharacterStyle link : links) {
+            int start = sb.getSpanStart(link);
+            int end = sb.getSpanEnd(link);
+            sb.removeSpan(link);
 
-                ClickableSpan underlineSpan = new ClickableSpan() {
-                    @Override
-                    public void onClick(View view) {
-                        if (link instanceof ProfileSpan) {
-                            ((ProfileSpan) link).onClick(view);
-                        } else if (delegate != null) {
-                            delegate.didPressUrl(ChatMessageCell.this, link, false);
-                        }
+            ClickableSpan underlineSpan = new ClickableSpan() {
+                @Override
+                public void onClick(View view) {
+                    if (link instanceof ProfileSpan) {
+                        ((ProfileSpan) link).onClick(view);
+                    } else if (delegate != null) {
+                        delegate.didPressUrl(ChatMessageCell.this, link, false);
                     }
-                };
-                sb.setSpan(underlineSpan, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
-            //if some info has changed,such as message become read or played,etc,update our variable.
-            if(accessibilityText==null ||!sb.toString().equals(accessibilityText.toString())) accessibilityText = sb;
+                }
+            };
+            sb.setSpan(underlineSpan, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        //if some info has changed,such as message become read or played,etc,update our variable.
+        if(accessibilityText==null ||!sb.toString().equals(accessibilityText.toString())) accessibilityText = sb;
         return accessibilityText;
     }
 
@@ -20113,7 +20136,7 @@ public int[] getCoords(Boolean back) {
                 event.setItemCount(numberOfNodes+1);
                 event.setCurrentItemIndex(viewId);
             }
-sendAccessibilityEventUnchecked(event);
+            sendAccessibilityEventUnchecked(event);
         }
     }
 
@@ -20323,15 +20346,21 @@ sendAccessibilityEventUnchecked(event);
     public SeekBarWaveform getSeekBarWaveform() {
         return seekBarWaveform;
     }
+    private boolean canAddOrUseProfileNode() {
+return isChat && !currentMessageObject.isOut() &&(currentUser !=null ||currentChat!=null &&currentMessageObject.isFromGroup());
+    }
     private class ProfileSpan extends ClickableSpan {
-        private TLRPC.User user;
-        public ProfileSpan(TLRPC.User user) {
-            this.user = user;
+        private Object profile;
+        public ProfileSpan(Object profile) {
+            this.profile = profile;
         }
         @Override
         public void onClick(@NonNull View view) {
             if (delegate != null) {
-                delegate.didPressUserAvatar(ChatMessageCell.this, user, 0, 0);
+if(profile instanceof TLRPC.User) {
+                    if(((TLRPC.User) profile).id !=0) delegate.didPressUserAvatar(ChatMessageCell.this, (TLRPC.User) profile, lastTouchX, lastTouchY); else delegate.didPressHiddenForward(ChatMessageCell.this);
+}
+else delegate.didPressChannelAvatar(ChatMessageCell.this,(TLRPC.Chat) profile,0,lastTouchX,lastTouchY);
             }
         }
     }
@@ -20617,7 +20646,7 @@ sendAccessibilityEventUnchecked(event);
 
                 int i;
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-                    if (isChat && currentUser != null && !currentMessageObject.isOut()) {
+                    if (canAddOrUseProfileNode()) {
                         if(!isInitializedNodes) {
                             PROFILE = ++numberOfNodes;
                         }
@@ -20712,6 +20741,10 @@ sendAccessibilityEventUnchecked(event);
                     info.setSelected(true);
                 }
                 isInitializedNodes=true;
+                if(canAddOrUseProfileNode() &&Build.VERSION.SDK_INT>=Build.VERSION_CODES.LOLLIPOP &&PROFILE <0) {
+String longPressName = currentUser!=null? UserObject.getUserName(currentUser)+(getDelegate()!=null&&getDelegate().getAdminRank(currentUser.id,true)!=null?" ("+getDelegate().getAdminRank(currentUser.id,true)+")":""):currentChat.title;
+info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_user_or_channel,longPressName));
+                }
                 info.setAccessibilityFocused(true);
                 return info;
             } else {
@@ -20720,10 +20753,10 @@ sendAccessibilityEventUnchecked(event);
                 info.setParent(ChatMessageCell.this);
                 info.setPackageName(getContext().getPackageName());
                 if (virtualViewId == PROFILE) {
-                    if (currentUser == null) {
+                    if (!canAddOrUseProfileNode()) {
                         return null;
                     }
-                    String content = UserObject.getUserName(currentUser);
+                    String content = currentUser!=null? UserObject.getUserName(currentUser)+(getDelegate()!=null&&getDelegate().getAdminRank(currentUser.id,true)!=null?" ("+getDelegate().getAdminRank(currentUser.id,true)+")":""):currentChat.title;
                     info.setText(content);
                     rect.set((int) nameX, (int) nameY, (int) (nameX + nameWidth), (int) (nameY + (nameLayout != null ? nameLayout.getHeight() : 10)));
                     info.setClassName("android.widget.TextView");
@@ -20916,13 +20949,16 @@ sendAccessibilityEventUnchecked(event);
                     clear();
                     return true;
                 }
-if(action == AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS) {
+                if(action == AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS) {
                     currentFocusedVirtualView=virtualViewId;
                     sendAccessibilityEventForVirtualView(virtualViewId, AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED);
                 } else if (action == AccessibilityNodeInfo.ACTION_CLICK) {
                     if (virtualViewId == PROFILE) {
                         if (delegate != null) {
-                            delegate.didPressUserAvatar(ChatMessageCell.this, currentUser, 0, 0);
+                            if (currentUser != null) {
+if(currentUser.id!=0) delegate.didPressUserAvatar(ChatMessageCell.this, currentUser, lastTouchX, lastTouchY); else delegate.didPressHiddenForward(ChatMessageCell.this);
+                        }
+                            else delegate.didPressChannelAvatar(ChatMessageCell.this,currentChat,0,lastTouchX,lastTouchY);
                         }
                     } else if (virtualViewId >= LINK_CAPTION_IDS_START &&LINK_CAPTION_IDS_START>=0) {
                         ClickableSpan link = getLinkById(virtualViewId, true);
@@ -20999,7 +21035,7 @@ if(action == AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS) {
                     }
                 } else if (action == AccessibilityNodeInfo.ACTION_LONG_CLICK) {
                     if(virtualViewId==PROFILE) {
-                        delegate.didLongPressUserAvatar(ChatMessageCell.this,currentUser,0,0);
+                        if(currentUser!=null) delegate.didLongPressUserAvatar(ChatMessageCell.this,currentUser,lastTouchX,lastTouchY,true); else delegate.didLongPressChannelAvatar(ChatMessageCell.this,currentChat,0,lastTouchX,lastTouchY,true);
 }
 else {
                     ClickableSpan link = getLinkById(virtualViewId, virtualViewId >= LINK_CAPTION_IDS_START);

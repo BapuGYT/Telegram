@@ -69,7 +69,7 @@ public class AvatarPreviewer {
     private Layout layout;
     private boolean visible;
 
-    public void show(ViewGroup parentContainer, Data data, Callback callback) {
+    public void show(ViewGroup parentContainer, Data data, boolean accessibility,Callback callback) {
         Preconditions.checkNotNull(parentContainer);
         Preconditions.checkNotNull(data);
         Preconditions.checkNotNull(callback);
@@ -106,12 +106,18 @@ public class AvatarPreviewer {
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
                         WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM;
             }
-            windowManager.addView(layout, layoutParams);
-            parentContainer.requestDisallowInterceptTouchEvent(true);
-            visible = true;
+            if(!accessibility) {
+                windowManager.addView(layout, layoutParams);
+                parentContainer.requestDisallowInterceptTouchEvent(true);
+                visible = true;
+            }
+            else layout.showBottomSheet();
         }
     }
 
+    public void show(ViewGroup parentContainer, Data data, Callback callback) {
+show(parentContainer,data,false,callback);
+    }
     public void close() {
         if (visible) {
             visible = false;
