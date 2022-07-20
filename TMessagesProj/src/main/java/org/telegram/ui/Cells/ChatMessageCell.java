@@ -75,6 +75,7 @@ import android.view.ViewGroup;
 import android.view.ViewStructure;
 import android.view.Window;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityManager;
 import android.view.accessibility.AccessibilityNodeProvider;
 import android.view.animation.Interpolator;
@@ -86,7 +87,6 @@ import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.ColorUtils;
 import androidx.core.math.MathUtils;
-import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
 
 import com.google.android.exoplayer2.util.Log;
 
@@ -606,6 +606,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         }
 
         default boolean drawingVideoPlayerContainer() {
+         return false;
+}
         default String getAdminRank(long uid,boolean accessibility) {
             return null;
         }
@@ -19775,12 +19777,15 @@ return getAdminRank(uid,false);
     public int getLayoutHeight() {
         return layoutHeight;
     }
-    private void clear() {
-        if(!touch) {
+    private void clear(int virtualViewId) {
+        if(!touch &&virtualViewId==currentFocusedVirtualView) {
             //sendAccessibilityEventForVirtualView(currentFocusedVirtualView,AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUS_CLEARED);
             currentFocusedVirtualView = -2;
         }
-        else touch=false;
+        else if(touch &&virtualViewId==currentFocusedVirtualView) touch=false;
+    }
+    private void clear() {
+clear(currentFocusedVirtualView);
     }
     @Override
     public boolean performAccessibilityAction(int action, Bundle arguments) {
@@ -19793,7 +19798,7 @@ return getAdminRank(uid,false);
             return true;
         }
         else if(action==AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS) {
-            clear();
+            clear(-1);
             return true;
         }
         /*else if(action==AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD &&arguments !=null &&arguments.getBoolean(actionInList)) return numberOfNodes<0 ||currentFocusedVirtualView<0?false:getAccessibilityNodeProvider().performAction(currentFocusedVirtualView,action,arguments);
@@ -19861,6 +19866,10 @@ if(currentUser!=null)delegate.didLongPressUserAvatar(ChatMessageCell.this,curren
     }
 
     @Override
+    public void onPopulateAccessibilityEvent(AccessibilityEvent event) {
+    }
+
+    @Override
     public void onInitializeAccessibilityEvent(AccessibilityEvent event) {
         event.setPackageName(getContext().getPackageName());
         event.setSource(ChatMessageCell.this, currentFocusedVirtualView);
@@ -19870,10 +19879,6 @@ if(currentUser!=null)delegate.didLongPressUserAvatar(ChatMessageCell.this,curren
         if(seekBarAccessibilityDelegate!=null &&currentFocusedVirtualView==-1) seekBarAccessibilityDelegate.onInitializeAccessibilityEvent(ChatMessageCell.this,event);
         CharSequence accText =getIterableTextForAccessibility();
         if(event.getText().size() ==0) event.setContentDescription(accText);
-    }
-
-    @Override
-    public void onPopulateAccessibilityEvent(AccessibilityEvent event) {
     }
 
     @Override
@@ -19911,19 +19916,26 @@ if(currentUser!=null)delegate.didLongPressUserAvatar(ChatMessageCell.this,curren
         return currentMessageObject!=null &&(currentMessageObject.isVoice() || currentMessageObject.isRoundVideo() || currentMessageObject.isMusic() && MediaController.getInstance().isPlayingMessage(currentMessageObject));
     }
     //Getting coordinates for accessibility scrolling.
-    public int[] getCoords(Boolean back) {
+    public int[] getCoords(Boolean back,boolean newPos) {
         if(accessibilityVirtualViewBounds.size() ==0) return null;
         int pos=back?currentFocusedVirtualView-1:currentFocusedVirtualView+1;
-        if(back &&currentFocusedVirtualView==-2) pos=accessibilityVirtualViewBounds.size()-1;
+        if(back &&(currentFocusedVirtualView==-1 ||newPos)) pos=accessibilityVirtualViewBounds.size()-1;
         if(pos<0 ||pos>=accessibilityVirtualViewBounds.size()) return null;
         int[] loc=new int[2];
         getLocationOnScreen(loc);
         //whether two lines below ok,to compute coordinates for scrolling?
         if(accessibilityVirtualViewBounds.get(pos)==null) return null;
-        return new int[] {accessibilityVirtualViewBounds.get(pos).left+loc[0]+getScrollX()-getPaddingRight()-getPaddingLeft(),accessibilityVirtualViewBounds.get(pos).top+loc[1]+getScrollY()-getPaddingBottom()-getPaddingTop()};
+        return new int[] {accessibilityVirtualViewBounds.get(pos).left+getLeft(),accessibilityVirtualViewBounds.get(pos).top+getTop()};
+    }
+    public int[] getCoords(Boolean back) {
+return getCoords(back,false);
     }
     //To support diferents granularities for talkback. See sources of View class in android sdk sources.
     public CharSequence getIterableTextForAccessibility() {
+                final boolean unread = currentMessageObject != null && currentMessageObject.isOut() && !currentMessageObject.scheduled && currentMessageObject.isUnread();
+                final boolean contentUnread = currentMessageObject != null && currentMessageObject.isContentUnread();
+                final long fileSize = currentMessageObject != null ? currentMessageObject.loadedFileSize : 0;
+                if (accessibilityText == null || accessibilityTextUnread != unread || accessibilityTextContentUnread != contentUnread || accessibilityTextFileSize != fileSize) {
         SpannableStringBuilder sb = new SpannableStringBuilder();
         if (isChat && !currentMessageObject.isOut()) {
             if(currentUser !=null) {
@@ -19935,18 +19947,23 @@ sb.append(currentChat.title);
                 sb.setSpan(new ProfileSpan(currentChat), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             sb.append('\n');
-
         }
         //add information,if something write from channel,but not from user name (it can do,for example,channel creators).
         else if(currentUser ==null && currentMessageObject.customName !=null &&currentMessageObject.customName.length()>0) sb.append(currentMessageObject.customName+"\n");
         if (drawForwardedName) {
             for (int a = 0; a < 2; a++) {
-                if (forwardedNameLayout[a] != null) {
+                if (forwardedNameLayout[a] != null &&forwardedNameLayout[a].getText() !=null) {
                     sb.append(forwardedNameLayout[a].getText());
                     sb.append(a == 0 ? " " : "\n");
                 }
             }
         }
+                    if (documentAttach != null && documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {
+                        String fileName = FileLoader.getAttachFileName(documentAttach);
+                        if (fileName.indexOf('.') != -1) {
+                            sb.append(LocaleController.formatString(R.string.AccDescrDocumentType, fileName.substring(fileName.lastIndexOf('.') + 1).toUpperCase(Locale.ROOT)));
+                        }
+                    }
         if (!TextUtils.isEmpty(currentMessageObject.messageText)) {
             sb.append(currentMessageObject.messageText);
         }
@@ -19963,10 +19980,10 @@ sb.append(currentChat.title);
             sb.append("\n");
             sb.append(LocaleController.formatString("AccDescrMusicInfo", R.string.AccDescrMusicInfo, currentMessageObject.getMusicAuthor(), currentMessageObject.getMusicTitle()));
             sb.append(", ");
-            sb.append(LocaleController.formatDuration(currentMessageObject.getDuration()));
+            sb.append(LocaleController.formatDuration((int) currentMessageObject.getDuration()));
         } else if (currentMessageObject.isVoice() || isRoundVideo) {
             sb.append(", ");
-            sb.append(LocaleController.formatDuration(currentMessageObject.getDuration()));
+            sb.append(LocaleController.formatDuration((int) currentMessageObject.getDuration()));
             sb.append(", ");
             if (currentMessageObject.isContentUnread()) {
                 sb.append(LocaleController.getString("AccDescrMsgNotPlayed", R.string.AccDescrMsgNotPlayed));
@@ -19996,6 +20013,16 @@ sb.append(currentChat.title);
             }
             sb.append(title);
         }
+                    if (documentAttach != null) {
+                        if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO) {
+                            sb.append(", ");
+                            sb.append(LocaleController.formatDuration((int) currentMessageObject.getDuration()));
+                        }
+                        if (buttonState == 0 || documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {
+                            sb.append(", ");
+                            sb.append(AndroidUtilities.formatFileSize(documentAttach.size));
+                        }
+                    }
         if (currentMessageObject.isVoiceTranscriptionOpen()) {
             sb.append("\n");
             sb.append(currentMessageObject.getVoiceTranscription());
@@ -20004,16 +20031,6 @@ sb.append(currentChat.title);
         if (currentMessageObject.messageOwner.media != null && !TextUtils.isEmpty(currentMessageObject.caption)) {
             sb.append("\n");
             sb.append(currentMessageObject.caption);
-        }
-        if (documentAttach != null) {
-            if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO) {
-                sb.append(", ");
-                sb.append(LocaleController.formatDuration(currentMessageObject.getDuration()));
-            }
-            if (buttonState == 0 || documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {
-                sb.append(", ");
-                sb.append(AndroidUtilities.formatFileSize(documentAttach.size));
-            }
         }
         if (currentMessageObject.isOut()) {
             if (currentMessageObject.isSent()) {
@@ -20046,13 +20063,14 @@ sb.append(currentChat.title);
         }
         if (currentMessageObject.messageOwner.reactions != null && currentMessageObject.messageOwner.reactions.results != null) {
             if (currentMessageObject.messageOwner.reactions.results.size() == 1) {
-                TLRPC.TL_reactionCount reaction = currentMessageObject.messageOwner.reactions.results.get(0);
+                TLRPC.ReactionCount reaction = currentMessageObject.messageOwner.reactions.results.get(0);
+                String emoticon = reaction.reaction instanceof TLRPC.TL_reactionEmoji ? ((TLRPC.TL_reactionEmoji) reaction.reaction).emoticon : "";
                 if (reaction.count == 1) {
                     sb.append("\n");
                     boolean isMe = false;
                     String userName = "";
                     if (currentMessageObject.messageOwner.reactions.recent_reactions != null && currentMessageObject.messageOwner.reactions.recent_reactions.size() == 1) {
-                        TLRPC.TL_messagePeerReaction recentReaction = currentMessageObject.messageOwner.reactions.recent_reactions.get(0);
+                        TLRPC.MessagePeerReaction recentReaction = currentMessageObject.messageOwner.reactions.recent_reactions.get(0);
                         if (recentReaction != null) {
                             TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(MessageObject.getPeerId(recentReaction.peer_id));
                             isMe = UserObject.isUserSelf(user);
@@ -20062,21 +20080,22 @@ sb.append(currentChat.title);
                         }
                     }
                     if (isMe) {
-                        sb.append(LocaleController.formatString("AccDescrYouReactedWith", R.string.AccDescrYouReactedWith, reaction.reaction));
+                        sb.append(LocaleController.formatString("AccDescrYouReactedWith", R.string.AccDescrYouReactedWith, emoticon));
                     } else {
-                        sb.append(LocaleController.formatString("AccDescrReactedWith", R.string.AccDescrReactedWith, userName, reaction.reaction));
+                        sb.append(LocaleController.formatString("AccDescrReactedWith", R.string.AccDescrReactedWith, userName, emoticon));
                     }
                 } else if (reaction.count > 1) {
                     sb.append("\n");
-                    sb.append(LocaleController.formatPluralString("AccDescrNumberOfPeopleReactions", reaction.count, reaction.reaction));
+                    sb.append(LocaleController.formatPluralString("AccDescrNumberOfPeopleReactions", reaction.count, emoticon));
                 }
             } else {
                 sb.append(LocaleController.getString("Reactions", R.string.Reactions)).append((": "));
                 final int count = currentMessageObject.messageOwner.reactions.results.size();
                 for (int i = 0; i < count; ++i) {
-                    TLRPC.TL_reactionCount reactionCount = currentMessageObject.messageOwner.reactions.results.get(i);
+                    TLRPC.ReactionCount reactionCount = currentMessageObject.messageOwner.reactions.results.get(i);
+                    String emoticon = reactionCount.reaction instanceof TLRPC.TL_reactionEmoji ? ((TLRPC.TL_reactionEmoji) reactionCount.reaction).emoticon : "";
                     if (reactionCount != null) {
-                        sb.append(reactionCount.reaction).append(" ").append(reactionCount.count + "");
+                        sb.append(emoticon).append(" ").append(reactionCount.count + "");
                         if (i + 1 < count) {
                             sb.append(", ");
                         }
@@ -20111,7 +20130,12 @@ sb.append(currentChat.title);
             sb.setSpan(underlineSpan, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         //if some info has changed,such as message become read or played,etc,update our variable.
-        if(accessibilityText==null ||!sb.toString().equals(accessibilityText.toString())) accessibilityText = sb;
+        //if(accessibilityText==null ||!sb.toString().equals(accessibilityText.toString())) accessibilityText = sb;
+                    accessibilityText = sb;
+                    accessibilityTextUnread = unread;
+                    accessibilityTextContentUnread = contentUnread;
+                    accessibilityTextFileSize = fileSize;
+				}
         return accessibilityText;
     }
 
@@ -20392,561 +20416,358 @@ else delegate.didPressChannelAvatar(ChatMessageCell.this,(TLRPC.Chat) profile,0,
             if (virtualViewId == HOST_VIEW_ID) {
                 AccessibilityNodeInfo info = AccessibilityNodeInfo.obtain(ChatMessageCell.this);
                 onInitializeAccessibilityNodeInfo(info);
-                final boolean unread = currentMessageObject != null && currentMessageObject.isOut() && !currentMessageObject.scheduled && currentMessageObject.isUnread();
-                final boolean contentUnread = currentMessageObject != null && currentMessageObject.isContentUnread();
-                final long fileSize = currentMessageObject != null ? currentMessageObject.loadedFileSize : 0;
-                if (accessibilityText == null || accessibilityTextUnread != unread || accessibilityTextContentUnread != contentUnread || accessibilityTextFileSize != fileSize) {
-                    SpannableStringBuilder sb = new SpannableStringBuilder();
-                    if (isChat && currentUser != null && !currentMessageObject.isOut()) {
-                        sb.append(UserObject.getUserName(currentUser));
-                        sb.setSpan(new ProfileSpan(currentUser), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                        sb.append('\n');
+                if (accessibilityText == null) getIterableTextForAccessibility();
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+                        info.setContentDescription(accessibilityText.toString());
+                    } else {
+                        info.setText(accessibilityText);
+                    }
+                    info.setEnabled(true);
+                    if (Build.VERSION.SDK_INT >= 19) {
+                        AccessibilityNodeInfo.CollectionItemInfo itemInfo = info.getCollectionItemInfo();
+                        if (itemInfo != null) {
+                            info.setCollectionItemInfo(AccessibilityNodeInfo.CollectionItemInfo.obtain(itemInfo.getRowIndex(), 1, 0, 1, false));
+                        }
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_msg_options, LocaleController.getString("AccActionMessageOptions", R.string.AccActionMessageOptions)));
+                        int icon = getIconForCurrentState();
+                        CharSequence actionLabel = null;
+                        switch (icon) {
+                            case MediaActionDrawable.ICON_PLAY:
+                                actionLabel = LocaleController.getString("AccActionPlay", R.string.AccActionPlay);
+                                break;
+                            case MediaActionDrawable.ICON_PAUSE:
+                                actionLabel = LocaleController.getString("AccActionPause", R.string.AccActionPause);
+                                break;
+                            case MediaActionDrawable.ICON_FILE:
+                                actionLabel = LocaleController.getString("AccActionOpenFile", R.string.AccActionOpenFile);
+                                break;
+                            case MediaActionDrawable.ICON_DOWNLOAD:
+                                actionLabel = LocaleController.getString("AccActionDownload", R.string.AccActionDownload);
+                                break;
+                            case MediaActionDrawable.ICON_CANCEL:
+                                actionLabel = LocaleController.getString("AccActionCancelDownload", R.string.AccActionCancelDownload);
+                                break;
+                            default:
+                                if (currentMessageObject.type == 16) {
+                                    actionLabel = LocaleController.getString("CallAgain", R.string.CallAgain);
+                                }
+                        }
+                        info.addAction(new AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_CLICK, actionLabel));
+                        info.addAction(new AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_LONG_CLICK, LocaleController.getString("AccActionEnterSelectionMode", R.string.AccActionEnterSelectionMode)));
+                        int smallIcon = getMiniIconForCurrentState();
+                        if (smallIcon == MediaActionDrawable.ICON_DOWNLOAD) {
+                            info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_small_button, LocaleController.getString("AccActionDownload", R.string.AccActionDownload)));
+                        }
+                    } else {
+                        info.addAction(AccessibilityNodeInfo.ACTION_CLICK);
+                        info.addAction(AccessibilityNodeInfo.ACTION_LONG_CLICK);
+                    }
+                    if (isSeekbarCell()) {
+                        seekBarAccessibilityDelegate.onInitializeAccessibilityNodeInfoInternal(info);
+                    }
+                    if (useTranscribeButton && transcribeButton != null) {
+                        if (!isInitializedNodes) {
+                            TRANSCRIBE = ++numberOfNodes;
+                        }
+                        info.addChild(ChatMessageCell.this, TRANSCRIBE);
+                    }
+
+                    int i;
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+                        if (canAddOrUseProfileNode()) {
+                            if (!isInitializedNodes) {
+                                PROFILE = ++numberOfNodes;
+                            }
+                            info.addChild(ChatMessageCell.this, PROFILE);
+                        }
+                        if (currentMessageObject.messageText instanceof Spannable) {
+                            Spannable buffer = (Spannable) currentMessageObject.messageText;
+                            CharacterStyle[] links = buffer.getSpans(0, buffer.length(), ClickableSpan.class);
+                            if (!isInitializedNodes && links.length > 0) {
+                                LINK_IDS_START = ++numberOfNodes;
+                                numberOfNodes += links.length;
+                            }
+                            i = 0;
+                            for (CharacterStyle link : links) {
+                                info.addChild(ChatMessageCell.this, LINK_IDS_START + i);
+                                i++;
+                            }
+                        }
+                        if (currentMessageObject.caption instanceof Spannable && captionLayout != null) {
+                            Spannable buffer = (Spannable) currentMessageObject.caption;
+                            CharacterStyle[] links = buffer.getSpans(0, buffer.length(), ClickableSpan.class);
+                            if (!isInitializedNodes && links.length > 0) {
+                                LINK_CAPTION_IDS_START = ++numberOfNodes;
+                                numberOfNodes += links.length;
+                            }
+                            i = 0;
+                            for (CharacterStyle link : links) {
+                                info.addChild(ChatMessageCell.this, LINK_CAPTION_IDS_START + i);
+                                i++;
+                            }
+                        }
+                    }
+                    if (!isInitializedNodes && botButtons.size() > 0) {
+                        BOT_BUTTONS_START = ++numberOfNodes;
+                        numberOfNodes += botButtons.size();
+                    }
+                    i = 0;
+                    for (BotButton button : botButtons) {
+                        info.addChild(ChatMessageCell.this, BOT_BUTTONS_START + i);
+                        i++;
+                    }
+                    if (hintButtonVisible && pollHintX != -1 && currentMessageObject.isPoll()) {
+                        if (!isInitializedNodes) {
+                            POLL_HINT = ++numberOfNodes;
+                        }
+                        info.addChild(ChatMessageCell.this, POLL_HINT);
+                    }
+                    if (!isInitializedNodes && pollButtons.size() > 0) {
+                        POLL_BUTTONS_START = ++numberOfNodes;
+                        numberOfNodes += pollButtons.size();
+                    }
+                    i = 0;
+                    for (PollButton button : pollButtons) {
+                        info.addChild(ChatMessageCell.this, POLL_BUTTONS_START + i);
+                        i++;
+                    }
+                    if (drawInstantView && !instantButtonRect.isEmpty()) {
+                        if (!isInitializedNodes) {
+                            INSTANT_VIEW = ++numberOfNodes;
+                        }
+                        info.addChild(ChatMessageCell.this, INSTANT_VIEW);
+                    }
+                    if (replyNameLayout != null) {
+                        if (!isInitializedNodes) {
+                            REPLY = ++numberOfNodes;
+                        }
+                        info.addChild(ChatMessageCell.this, REPLY);
+                    }
+                    if (commentLayout != null) {
+                        if (!isInitializedNodes) {
+                            COMMENT = ++numberOfNodes;
+                        }
+                        info.addChild(ChatMessageCell.this, COMMENT);
+                    }
+                    if (drawSideButton == 1 || drawSideButton == 2) {
+                        if (!isInitializedNodes) {
+                            SHARE = ++numberOfNodes;
+                        }
+                        info.addChild(ChatMessageCell.this, SHARE);
                     }
                     if (drawForwardedName) {
-                        for (int a = 0; a < 2; a++) {
-                            if (forwardedNameLayout[a] != null && forwardedNameLayout[a].getText() != null) {
-                                sb.append(forwardedNameLayout[a].getText());
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_open_forwarded_origin, LocaleController.getString("AccActionOpenForwardedOrigin", R.string.AccActionOpenForwardedOrigin)));
+                        } else {
+                            if (!isInitializedNodes) {
+                                FORWARD = ++numberOfNodes;
+                            }
+                            info.addChild(ChatMessageCell.this, FORWARD);
+                        }
+                    }
+                    if (drawSelectionBackground || getBackground() != null) {
+                        info.setSelected(true);
+                    }
+                    isInitializedNodes = true;
+                    if (canAddOrUseProfileNode() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && PROFILE < 0) {
+                        String longPressName = currentUser != null ? UserObject.getUserName(currentUser) + (getDelegate() != null && getDelegate().getAdminRank(currentUser.id, true) != null ? " (" + getDelegate().getAdminRank(currentUser.id, true) + ")" : "") : currentChat.title;
+                        info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_user_or_channel, longPressName));
+                    }
+                    info.setAccessibilityFocused(true);
+                    return info;
+                } else {
+                    AccessibilityNodeInfo info = AccessibilityNodeInfo.obtain();
+                    info.setSource(ChatMessageCell.this, virtualViewId);
+                    info.setParent(ChatMessageCell.this);
+                    info.setPackageName(getContext().getPackageName());
+                    if (virtualViewId == PROFILE) {
+                        if (!canAddOrUseProfileNode()) {
+                            return null;
+                        }
+                        String content = currentUser != null ? UserObject.getUserName(currentUser) + (getDelegate() != null && getDelegate().getAdminRank(currentUser.id, true) != null ? " (" + getDelegate().getAdminRank(currentUser.id, true) + ")" : "") : currentChat.title;
+                        info.setText(content);
+                        rect.set((int) nameX, (int) nameY, (int) (nameX + nameWidth), (int) (nameY + (nameLayout != null ? nameLayout.getHeight() : 10)));
+                        info.setClassName("android.widget.TextView");
+                        info.setLongClickable(true);
+                        info.addAction(AccessibilityNodeInfo.ACTION_LONG_CLICK);
+                    } else if (virtualViewId >= LINK_CAPTION_IDS_START && LINK_CAPTION_IDS_START >= 0) {
+                        if (!(currentMessageObject.caption instanceof Spannable) || captionLayout == null) {
+                            return null;
+                        }
+                        Spannable buffer = (Spannable) currentMessageObject.caption;
+                        ClickableSpan link = getLinkById(virtualViewId, true);
+                        if (link == null) {
+                            return null;
+                        }
+                        int[] linkPos = getRealSpanStartAndEnd(buffer, link);
+                        String content = buffer.subSequence(linkPos[0], linkPos[1]).toString();
+                        info.setText(content);
+                        int length = captionLayout.getText().length();
+
+                        captionLayout.getSelectionPath(linkPos[0], linkPos[1], linkPath);
+                        linkPath.computeBounds(rectF, true);
+                        rect.set((int) rectF.left, (int) rectF.top, (int) rectF.right, (int) rectF.bottom);
+                        rect.offset((int) captionX, (int) captionY);
+                        info.setClassName("android.widget.TextView");
+                        info.setLongClickable(true);
+                        info.addAction(AccessibilityNodeInfo.ACTION_LONG_CLICK);
+                    } else if (virtualViewId >= LINK_IDS_START && LINK_IDS_START >= 0) {
+                        if (!(currentMessageObject.messageText instanceof Spannable)) {
+                            return null;
+                        }
+                        Spannable buffer = (Spannable) currentMessageObject.messageText;
+                        ClickableSpan link = getLinkById(virtualViewId, false);
+                        if (link == null) {
+                            return null;
+                        }
+                        int[] linkPos = getRealSpanStartAndEnd(buffer, link);
+                        String content = buffer.subSequence(linkPos[0], linkPos[1]).toString();
+                        info.setText(content);
+                        for (MessageObject.TextLayoutBlock block : currentMessageObject.textLayoutBlocks) {
+                            int length = block.textLayout.getText().length();
+                            if (block.charactersOffset <= linkPos[0] && block.charactersOffset + length >= linkPos[1]) {
+                                block.textLayout.getSelectionPath(linkPos[0] - block.charactersOffset, linkPos[1] - block.charactersOffset, linkPath);
+                                linkPath.computeBounds(rectF, true);
+                                rect.set((int) rectF.left, (int) rectF.top, (int) rectF.right, (int) rectF.bottom);
+                                rect.offset(0, (int) block.textYOffset);
+                                rect.offset(textX, textY);
+                                break;
+                            }
+                        }
+                        info.setClassName("android.widget.TextView");
+                        info.setLongClickable(true);
+                        info.addAction(AccessibilityNodeInfo.ACTION_LONG_CLICK);
+                    } else if (virtualViewId >= BOT_BUTTONS_START && BOT_BUTTONS_START >= 0) {
+                        int buttonIndex = virtualViewId - BOT_BUTTONS_START;
+                        if (buttonIndex >= botButtons.size()) {
+                            return null;
+                        }
+                        BotButton button = botButtons.get(buttonIndex);
+                        info.setText(button.title.getText());
+                        info.setClassName("android.widget.Button");
+                        info.addAction(AccessibilityNodeInfo.ACTION_CLICK);
+
+                        rect.set(button.x, button.y, button.x + button.width, button.y + button.height);
+                        int addX;
+                        if (currentMessageObject.isOutOwner()) {
+                            addX = getMeasuredWidth() - widthForButtons - AndroidUtilities.dp(10);
+                        } else {
+                            addX = backgroundDrawableLeft + AndroidUtilities.dp(mediaBackground ? 1 : 7);
+                        }
+                        rect.offset(addX, layoutHeight);
+                    } else if (virtualViewId >= POLL_BUTTONS_START && POLL_BUTTONS_START >= 0) {
+                        int buttonIndex = virtualViewId - POLL_BUTTONS_START;
+                        if (buttonIndex >= pollButtons.size()) {
+                            return null;
+                        }
+                        PollButton button = pollButtons.get(buttonIndex);
+                        StringBuilder sb = new StringBuilder(button.title.getText());
+                        if (pollVoted) {
+                            info.setClassName("android.widget.Button");
+                            sb.append(", ").append(button.percent).append("%");
+                        } else {
+                            //Even for closed poll we should add percentage too.
+                            if (pollClosed) sb.append(", ").append(button.percent).append("%");
+                            info.setSelected(button.chosen);
+                            if (lastPoll != null && lastPoll.quiz && (button.chosen || button.correct)) {
+                                sb.append(", ").append(button.correct ? LocaleController.getString("AccDescrQuizCorrectAnswer", R.string.AccDescrQuizCorrectAnswer) : LocaleController.getString("AccDescrQuizIncorrectAnswer", R.string.AccDescrQuizIncorrectAnswer));
+                            }
+                        }
+                        info.setText(sb);
+                        final int y = button.y + namesOffset;
+                        final int w = backgroundWidth - AndroidUtilities.dp(76);
+                        rect.set(button.x, y, button.x + w, y + button.height);
+                    } else if (virtualViewId == POLL_HINT) {
+                        info.setClassName("android.widget.Button");
+                        info.setText(LocaleController.getString("AccDescrQuizExplanation", R.string.AccDescrQuizExplanation));
+                        rect.set(pollHintX - AndroidUtilities.dp(8), pollHintY - AndroidUtilities.dp(8), pollHintX + AndroidUtilities.dp(32), pollHintY + AndroidUtilities.dp(32));
+                    } else if (virtualViewId == INSTANT_VIEW) {
+                        info.setClassName("android.widget.Button");
+                        if (instantViewLayout != null) {
+                            info.setText(instantViewLayout.getText());
+                        }
+                        info.addAction(AccessibilityNodeInfo.ACTION_CLICK);
+                        instantButtonRect.round(rect);
+                    } else if (virtualViewId == SHARE) {
+                        info.setClassName("android.widget.ImageButton");
+                        if (isOpenChatByShare(currentMessageObject)) {
+                            info.setContentDescription(LocaleController.getString("AccDescrOpenChat", R.string.AccDescrOpenChat));
+                        } else {
+                            info.setContentDescription(LocaleController.getString("ShareFile", R.string.ShareFile));
+                        }
+                        rect.set((int) sideStartX, (int) sideStartY, (int) sideStartX + AndroidUtilities.dp(40), (int) sideStartY + AndroidUtilities.dp(32));
+                    } else if (virtualViewId == REPLY) {
+                        StringBuilder sb = new StringBuilder();
+                        sb.append(LocaleController.getString("Reply", R.string.Reply));
+                        sb.append(", ");
+                        if (replyNameLayout != null) {
+                            sb.append(replyNameLayout.getText());
+                            sb.append(", ");
+                        }
+                        if (replyTextLayout != null) {
+                            sb.append(replyTextLayout.getText());
+                        }
+                        info.setContentDescription(sb.toString());
+                        rect.set(replyStartX, replyStartY, replyStartX + Math.max(replyNameWidth, replyTextWidth), replyStartY + AndroidUtilities.dp(35));
+                    } else if (virtualViewId == FORWARD) {
+                        StringBuilder sb = new StringBuilder();
+                        if (drawForwardedName) {
+                            for (int a = 0; a < 2; a++) {
+if (forwardedNameLayout[a] != null && forwardedNameLayout[a].getText() != null) sb.append(forwardedNameLayout[a].getText());
                                 sb.append(a == 0 ? " " : "\n");
                             }
                         }
-                    }
-                    if (documentAttach != null && documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {
-                        String fileName = FileLoader.getAttachFileName(documentAttach);
-                        if (fileName.indexOf('.') != -1) {
-                            sb.append(LocaleController.formatString(R.string.AccDescrDocumentType, fileName.substring(fileName.lastIndexOf('.') + 1).toUpperCase(Locale.ROOT)));
-                        }
-                    }
-                    if (!TextUtils.isEmpty(currentMessageObject.messageText)) {
-                        sb.append(currentMessageObject.messageText);
-                    }
-                    if (documentAttach != null && (documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT || documentAttachType == DOCUMENT_ATTACH_TYPE_GIF || documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO)) {
-                        if (buttonState == 1 && loadingProgressLayout != null) {
                             sb.append("\n");
-                            final boolean sending = currentMessageObject.isSending();
-                            final String key = sending ? "AccDescrUploadProgress" : "AccDescrDownloadProgress";
-                            final int resId = sending ? R.string.AccDescrUploadProgress : R.string.AccDescrDownloadProgress;
-                            sb.append(LocaleController.formatString(key, resId, AndroidUtilities.formatFileSize(currentMessageObject.loadedFileSize), AndroidUtilities.formatFileSize(lastLoadingSizeTotal)));
-                        }
-                    }
-                    if (currentMessageObject.isMusic()) {
-                        sb.append("\n");
-                        sb.append(LocaleController.formatString("AccDescrMusicInfo", R.string.AccDescrMusicInfo, currentMessageObject.getMusicAuthor(), currentMessageObject.getMusicTitle()));
-                        sb.append(", ");
-                        sb.append(LocaleController.formatDuration((int) currentMessageObject.getDuration()));
-                    } else if (currentMessageObject.isVoice() || isRoundVideo) {
-                        sb.append(", ");
-                        sb.append(LocaleController.formatDuration((int) currentMessageObject.getDuration()));
-                        sb.append(", ");
-                        if (currentMessageObject.isContentUnread()) {
-                            sb.append(LocaleController.getString("AccDescrMsgNotPlayed", R.string.AccDescrMsgNotPlayed));
-                        } else {
-                            sb.append(LocaleController.getString("AccDescrMsgPlayed", R.string.AccDescrMsgPlayed));
-                        }
-                    }
-                    if (lastPoll != null) {
-                        sb.append(", ");
-                        sb.append(lastPoll.question);
-                        sb.append(", ");
-                        String title;
-                        if (pollClosed) {
-                            title = LocaleController.getString("FinalResults", R.string.FinalResults);
-                        } else {
-                            if (lastPoll.quiz) {
-                                if (lastPoll.public_voters) {
-                                    title = LocaleController.getString("QuizPoll", R.string.QuizPoll);
-                                } else {
-                                    title = LocaleController.getString("AnonymousQuizPoll", R.string.AnonymousQuizPoll);
-                                }
-                            } else if (lastPoll.public_voters) {
-                                title = LocaleController.getString("PublicPoll", R.string.PublicPoll);
-                            } else {
-                                title = LocaleController.getString("AnonymousPoll", R.string.AnonymousPoll);
-                            }
-                        }
-                        sb.append(title);
-                    }
-                    if (documentAttach != null) {
-                        if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO) {
-                            sb.append(", ");
-                            sb.append(LocaleController.formatDuration((int) currentMessageObject.getDuration()));
-                        }
-                        if (buttonState == 0 || documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {
-                            sb.append(", ");
-                            sb.append(AndroidUtilities.formatFileSize(documentAttach.size));
-                        }
-                    }
-                    if (currentMessageObject.isVoiceTranscriptionOpen()) {
-                        sb.append("\n");
-                        sb.append(currentMessageObject.getVoiceTranscription());
-                    } else {
-                        if (MessageObject.getMedia(currentMessageObject.messageOwner) != null && !TextUtils.isEmpty(currentMessageObject.caption)) {
-                            sb.append("\n");
-                            sb.append(currentMessageObject.caption);
-                        }
-                    }
-                    if (currentMessageObject.isOut()) {
-                        if (currentMessageObject.isSent()) {
-                            sb.append("\n");
-                            if (currentMessageObject.scheduled) {
-                                sb.append(LocaleController.formatString("AccDescrScheduledDate", R.string.AccDescrScheduledDate, currentTimeString));
-                            } else {
-                                sb.append(LocaleController.formatString("AccDescrSentDate", R.string.AccDescrSentDate, LocaleController.getString("TodayAt", R.string.TodayAt) + " " + currentTimeString));
-                                sb.append(", ");
-                                sb.append(currentMessageObject.isUnread() ? LocaleController.getString("AccDescrMsgUnread", R.string.AccDescrMsgUnread) : LocaleController.getString("AccDescrMsgRead", R.string.AccDescrMsgRead));
-                            }
-                        } else if (currentMessageObject.isSending()) {
-                            sb.append("\n");
-                            sb.append(LocaleController.getString("AccDescrMsgSending", R.string.AccDescrMsgSending));
-                            final float sendingProgress = radialProgress.getProgress();
-                            if (sendingProgress > 0f) {
-                                sb.append(Integer.toString(Math.round(sendingProgress * 100))).append("%");
-                            }
-                        } else if (currentMessageObject.isSendError()) {
-                            sb.append("\n");
-                            sb.append(LocaleController.getString("AccDescrMsgSendingError", R.string.AccDescrMsgSendingError));
-                        }
-                    } else {
-                        sb.append("\n");
-                        sb.append(LocaleController.formatString("AccDescrReceivedDate", R.string.AccDescrReceivedDate, LocaleController.getString("TodayAt", R.string.TodayAt) + " " + currentTimeString));
-                    }
-                    if (getRepliesCount() > 0 && !hasCommentLayout()) {
-                        sb.append("\n");
-                        sb.append(LocaleController.formatPluralString("AccDescrNumberOfReplies", getRepliesCount()));
-                    }
-                    if (currentMessageObject.messageOwner.reactions != null && currentMessageObject.messageOwner.reactions.results != null) {
-                        if (currentMessageObject.messageOwner.reactions.results.size() == 1) {
-                            TLRPC.ReactionCount reaction = currentMessageObject.messageOwner.reactions.results.get(0);
-                            String emoticon = reaction.reaction instanceof TLRPC.TL_reactionEmoji ? ((TLRPC.TL_reactionEmoji) reaction.reaction).emoticon : "";
-                            if (reaction.count == 1) {
-                                sb.append("\n");
-                                boolean isMe = false;
-                                String userName = "";
-                                if (currentMessageObject.messageOwner.reactions.recent_reactions != null && currentMessageObject.messageOwner.reactions.recent_reactions.size() == 1) {
-                                    TLRPC.MessagePeerReaction recentReaction = currentMessageObject.messageOwner.reactions.recent_reactions.get(0);
-                                    if (recentReaction != null) {
-                                        TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(MessageObject.getPeerId(recentReaction.peer_id));
-                                        isMe = UserObject.isUserSelf(user);
-                                        if (user != null) {
-                                            userName = UserObject.getFirstName(user);
-                                        }
-                                    }
-                                }
-                                if (isMe) {
-                                    sb.append(LocaleController.formatString("AccDescrYouReactedWith", R.string.AccDescrYouReactedWith, emoticon));
-                                } else {
-                                    sb.append(LocaleController.formatString("AccDescrReactedWith", R.string.AccDescrReactedWith, userName, emoticon));
-                                }
-                            } else if (reaction.count > 1) {
-                                sb.append("\n");
-                                sb.append(LocaleController.formatPluralString("AccDescrNumberOfPeopleReactions", reaction.count, emoticon));
-                            }
-                        } else {
-                            sb.append(LocaleController.getString("Reactions", R.string.Reactions)).append((": "));
-                            final int count = currentMessageObject.messageOwner.reactions.results.size();
-                            for (int i = 0; i < count; ++i) {
-                                TLRPC.ReactionCount reactionCount = currentMessageObject.messageOwner.reactions.results.get(i);
-                                String emoticon = reactionCount.reaction instanceof TLRPC.TL_reactionEmoji ? ((TLRPC.TL_reactionEmoji) reactionCount.reaction).emoticon : "";
-                                if (reactionCount != null) {
-                                    sb.append(emoticon).append(" ").append(reactionCount.count + "");
-                                    if (i + 1 < count) {
-                                        sb.append(", ");
-                                    }
-                                }
-                            }
-                            sb.append("\n");
-                        }
-                    }
-                    if ((currentMessageObject.messageOwner.flags & TLRPC.MESSAGE_FLAG_HAS_VIEWS) != 0) {
-                        sb.append("\n");
-                        sb.append(LocaleController.formatPluralString("AccDescrNumberOfViews", currentMessageObject.messageOwner.views));
-                    }
-                    sb.append("\n");
-                    CharacterStyle[] links = sb.getSpans(0, sb.length(), ClickableSpan.class);
-
-                    for (CharacterStyle link : links) {
-                        int start = sb.getSpanStart(link);
-                        int end = sb.getSpanEnd(link);
-                        sb.removeSpan(link);
-
-                        ClickableSpan underlineSpan = new ClickableSpan() {
-                            @Override
-                            public void onClick(View view) {
-                                if (link instanceof ProfileSpan) {
-                                    ((ProfileSpan) link).onClick(view);
-                                } else if (delegate != null) {
-                                    delegate.didPressUrl(ChatMessageCell.this, link, false);
-                                }
-                            }
-                        };
-                        sb.setSpan(underlineSpan, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    }
-                    accessibilityText = sb;
-                    accessibilityTextUnread = unread;
-                    accessibilityTextContentUnread = contentUnread;
-                    accessibilityTextFileSize = fileSize;
-                }
-
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-                    info.setContentDescription(getIterableTextForAccessibility().toString());
-                } else {
-                    info.setText(getIterableTextForAccessibility());
-                }
-
-                info.setEnabled(true);
-                if (Build.VERSION.SDK_INT >= 19) {
-                    AccessibilityNodeInfo.CollectionItemInfo itemInfo = info.getCollectionItemInfo();
-                    if (itemInfo != null) {
-                        info.setCollectionItemInfo(AccessibilityNodeInfo.CollectionItemInfo.obtain(itemInfo.getRowIndex(), 1, 0, 1, false));
-                    }
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_msg_options, LocaleController.getString("AccActionMessageOptions", R.string.AccActionMessageOptions)));
-                    int icon = getIconForCurrentState();
-                    CharSequence actionLabel = null;
-                    switch (icon) {
-                        case MediaActionDrawable.ICON_PLAY:
-                            actionLabel = LocaleController.getString("AccActionPlay", R.string.AccActionPlay);
-                            break;
-                        case MediaActionDrawable.ICON_PAUSE:
-                            actionLabel = LocaleController.getString("AccActionPause", R.string.AccActionPause);
-                            break;
-                        case MediaActionDrawable.ICON_FILE:
-                            actionLabel = LocaleController.getString("AccActionOpenFile", R.string.AccActionOpenFile);
-                            break;
-                        case MediaActionDrawable.ICON_DOWNLOAD:
-                            actionLabel = LocaleController.getString("AccActionDownload", R.string.AccActionDownload);
-                            break;
-                        case MediaActionDrawable.ICON_CANCEL:
-                            actionLabel = LocaleController.getString("AccActionCancelDownload", R.string.AccActionCancelDownload);
-                            break;
-                        default:
-                            if (currentMessageObject.type == MessageObject.TYPE_PHONE_CALL) {
-                                actionLabel = LocaleController.getString("CallAgain", R.string.CallAgain);
-                            }
-                    }
-                    info.addAction(new AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_CLICK, actionLabel));
-                    info.addAction(new AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_LONG_CLICK, LocaleController.getString("AccActionEnterSelectionMode", R.string.AccActionEnterSelectionMode)));
-                    int smallIcon = getMiniIconForCurrentState();
-                    if (smallIcon == MediaActionDrawable.ICON_DOWNLOAD) {
-                        info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_small_button, LocaleController.getString("AccActionDownload", R.string.AccActionDownload)));
-                    }
-                } else {
-                    info.addAction(AccessibilityNodeInfo.ACTION_CLICK);
-                    info.addAction(AccessibilityNodeInfo.ACTION_LONG_CLICK);
-                }
-                if (isSeekbarCell()) {
-                    seekBarAccessibilityDelegate.onInitializeAccessibilityNodeInfoInternal(info);
-                }
-                if (useTranscribeButton && transcribeButton != null) {
-                    if(!isInitializedNodes) {
-                        TRANSCRIBE = ++numberOfNodes;
-                    }
-                    info.addChild(ChatMessageCell.this, TRANSCRIBE);
-                }
-
-                int i;
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-                    if (canAddOrUseProfileNode()) {
-                        if(!isInitializedNodes) {
-                            PROFILE = ++numberOfNodes;
-                        }
-                        info.addChild(ChatMessageCell.this, PROFILE);
-                    }
-                    if (currentMessageObject.messageText instanceof Spannable) {
-                        Spannable buffer = (Spannable) currentMessageObject.messageText;
-                        CharacterStyle[] links    = buffer.getSpans(0, buffer.length(), ClickableSpan.class);
-                        if(!isInitializedNodes &&links.length>0) {
-                            LINK_IDS_START = ++numberOfNodes;
-                            numberOfNodes += links.length;
-                        }
-                        i = 0;
-                        for (CharacterStyle link : links) {
-                            info.addChild(ChatMessageCell.this, LINK_IDS_START + i);
-                            i++;
-                        }
-                    }
-                    if (currentMessageObject.caption instanceof Spannable && captionLayout != null) {
-                        Spannable buffer = (Spannable) currentMessageObject.caption;
-                        CharacterStyle[] links = buffer.getSpans(0, buffer.length(), ClickableSpan.class);
-                        if(!isInitializedNodes &&links.length>0) {
-                            LINK_CAPTION_IDS_START = ++numberOfNodes;
-                            numberOfNodes += links.length;
-                        }
-                        i = 0;
-                        for (CharacterStyle link : links) {
-                            info.addChild(ChatMessageCell.this, LINK_CAPTION_IDS_START + i);
-                            i++;
-                        }
-                    }
-                }
-                if(!isInitializedNodes &&botButtons.size()>0) {
-                    BOT_BUTTONS_START = ++numberOfNodes;
-                    numberOfNodes += botButtons.size();
-                }
-                i = 0;
-                for (BotButton button : botButtons) {
-                    info.addChild(ChatMessageCell.this, BOT_BUTTONS_START + i);
-                    i++;
-                }
-                if (hintButtonVisible && pollHintX != -1 && currentMessageObject.isPoll()) {
-                    if(!isInitializedNodes) {
-                        POLL_HINT = ++numberOfNodes;
-                    }
-                    info.addChild(ChatMessageCell.this, POLL_HINT);
-                }
-                if(!isInitializedNodes &&pollButtons.size()>0) {
-                    POLL_BUTTONS_START = ++numberOfNodes;
-                    numberOfNodes += pollButtons.size();
-                }
-                i = 0;
-                for (PollButton button : pollButtons) {
-                    info.addChild(ChatMessageCell.this, POLL_BUTTONS_START + i);
-                    i++;
-                }
-                if (drawInstantView && !instantButtonRect.isEmpty()) {
-                    if(!isInitializedNodes) {
-                        INSTANT_VIEW = ++numberOfNodes;
-                    }
-                    info.addChild(ChatMessageCell.this, INSTANT_VIEW);
-                }
-                if (commentLayout != null) {
-                    if(!isInitializedNodes) {
-                        COMMENT = ++numberOfNodes;
-                    }
-                    info.addChild(ChatMessageCell.this, COMMENT);
-                }
-                if (drawSideButton == 1 || drawSideButton == 2) {
-                    if(!isInitializedNodes) {
-                        SHARE = ++numberOfNodes;
-                    }
-                    info.addChild(ChatMessageCell.this, SHARE);
-                }
-                if (replyNameLayout != null) {
-                    if(!isInitializedNodes) {
-                        REPLY = ++numberOfNodes;
-                    }
-                    info.addChild(ChatMessageCell.this, REPLY);
-                }
-                if (forwardedNameLayout[0] != null && forwardedNameLayout[1] != null) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                        info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_open_forwarded_origin, LocaleController.getString("AccActionOpenForwardedOrigin", R.string.AccActionOpenForwardedOrigin)));
-                    } else {
-                        if(!isInitializedNodes) {
-                            FORWARD = ++numberOfNodes;
-                        }
-                        info.addChild(ChatMessageCell.this, FORWARD);
-                    }
-                }
-                if (drawSelectionBackground || getBackground() != null) {
-                    info.setSelected(true);
-                }
-                isInitializedNodes=true;
-                if(canAddOrUseProfileNode() &&Build.VERSION.SDK_INT>=Build.VERSION_CODES.LOLLIPOP &&PROFILE <0) {
-String longPressName = currentUser!=null? UserObject.getUserName(currentUser)+(getDelegate()!=null&&getDelegate().getAdminRank(currentUser.id,true)!=null?" ("+getDelegate().getAdminRank(currentUser.id,true)+")":""):currentChat.title;
-info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.acc_action_user_or_channel,longPressName));
-                }
-                info.setAccessibilityFocused(true);
-                return info;
-            } else {
-                AccessibilityNodeInfo info = AccessibilityNodeInfo.obtain();
-                info.setSource(ChatMessageCell.this, virtualViewId);
-                info.setParent(ChatMessageCell.this);
-                info.setPackageName(getContext().getPackageName());
-                if (virtualViewId == PROFILE) {
-                    if (!canAddOrUseProfileNode()) {
-                        return null;
-                    }
-                    String content = currentUser!=null? UserObject.getUserName(currentUser)+(getDelegate()!=null&&getDelegate().getAdminRank(currentUser.id,true)!=null?" ("+getDelegate().getAdminRank(currentUser.id,true)+")":""):currentChat.title;
-                    info.setText(content);
-                    rect.set((int) nameX, (int) nameY, (int) (nameX + nameWidth), (int) (nameY + (nameLayout != null ? nameLayout.getHeight() : 10)));
-                    info.setClassName("android.widget.TextView");
-                    info.setLongClickable(true);
-                    info.addAction(AccessibilityNodeInfo.ACTION_LONG_CLICK);
-                } else if (virtualViewId >= LINK_CAPTION_IDS_START &&LINK_CAPTION_IDS_START>=0) {
-                    if (!(currentMessageObject.caption instanceof Spannable) || captionLayout == null) {
-                        return null;
-                    }
-                    Spannable buffer = (Spannable) currentMessageObject.caption;
-                    ClickableSpan link = getLinkById(virtualViewId, false);
-                    if (link == null) {
-                        return null;
-                    }
-                    int[] linkPos = getRealSpanStartAndEnd(buffer, link);
-                    String content = buffer.subSequence(linkPos[0], linkPos[1]).toString();
-                    info.setText(content);
-                    for (MessageObject.TextLayoutBlock block : captionLayout.textLayoutBlocks) {
-                        int length = block.textLayout.getText().length();
-                        if (block.charactersOffset <= linkPos[0] && block.charactersOffset + length >= linkPos[1]) {
-                            block.textLayout.getSelectionPath(linkPos[0] - block.charactersOffset, linkPos[1] - block.charactersOffset, linkPath);
-                            linkPath.computeBounds(rectF, true);
-                            rect.set((int) rectF.left, (int) rectF.top, (int) rectF.right, (int) rectF.bottom);
-                            rect.offset(0, (int) block.textYOffset);
-                            rect.offset(textX, textY);
-                            break;
-                        }
-                    }
-                    info.setClassName("android.widget.TextView");
-                    info.setLongClickable(true);
-                    info.addAction(AccessibilityNodeInfo.ACTION_CLICK);
-                    info.addAction(AccessibilityNodeInfo.ACTION_LONG_CLICK);
-                } else if (virtualViewId >= LINK_IDS_START &&LINK_IDS_START>=0) {
-                    if (!(currentMessageObject.messageText instanceof Spannable)) {
-                        return null;
-                    }
-                    Spannable buffer = (Spannable) currentMessageObject.messageText;
-                    ClickableSpan link = getLinkById(virtualViewId, false);
-                    if (link == null) {
-                        return null;
-                    }
-                    int[] linkPos = getRealSpanStartAndEnd(buffer, link);
-                    String content = buffer.subSequence(linkPos[0], linkPos[1]).toString();
-                    info.setText(content);
-                    for (MessageObject.TextLayoutBlock block : currentMessageObject.textLayoutBlocks) {
-                        int length = block.textLayout.getText().length();
-                        if (block.charactersOffset <= linkPos[0] && block.charactersOffset + length >= linkPos[1]) {
-                            block.textLayout.getSelectionPath(linkPos[0] - block.charactersOffset, linkPos[1] - block.charactersOffset, linkPath);
-                            linkPath.computeBounds(rectF, true);
-                            rect.set((int) rectF.left, (int) rectF.top, (int) rectF.right, (int) rectF.bottom);
-                            rect.offset(0, (int) block.textYOffset);
-                            rect.offset(textX, textY);
-                            break;
-                        }
-                    }
-
-                    info.setClassName("android.widget.TextView");
-                    info.setLongClickable(true);
-                    info.addAction(AccessibilityNodeInfo.ACTION_LONG_CLICK);
-                } else if (virtualViewId >= BOT_BUTTONS_START &&BOT_BUTTONS_START>=0) {
-                    int buttonIndex = virtualViewId - BOT_BUTTONS_START;
-                    if (buttonIndex >= botButtons.size()) {
-                        return null;
-                    }
-                    BotButton button = botButtons.get(buttonIndex);
-                    info.setText(button.title.getText());
-                    info.setClassName("android.widget.Button");
-                    info.addAction(AccessibilityNodeInfo.ACTION_CLICK);
-
-                    rect.set(button.x, button.y, button.x + button.width, button.y + button.height);
-                    int addX;
-                    if (currentMessageObject.isOutOwner()) {
-                        addX = getMeasuredWidth() - widthForButtons - AndroidUtilities.dp(10);
-                    } else {
-                        addX = backgroundDrawableLeft + AndroidUtilities.dp(mediaBackground ? 1 : 7);
-                    }
-                    rect.offset(addX, layoutHeight);
-                } else if (virtualViewId >= POLL_BUTTONS_START &&POLL_BUTTONS_START>=0) {
-                    int buttonIndex = virtualViewId - POLL_BUTTONS_START;
-                    if (buttonIndex >= pollButtons.size()) {
-                        return null;
-                    }
-                    PollButton button = pollButtons.get(buttonIndex);
-                    StringBuilder sb = new StringBuilder(button.title.getText());
-                    if (!pollVoted) {
-                        info.setClassName("android.widget.Button");
-                        sb.append(", ").append(button.percent).append("%");
-                    }
-                    else {
-                        //Even for closed poll we should add percentage too.
-                        if(pollClosed) sb.append(", ").append(button.percent).append("%");
-                        info.setSelected(button.chosen);
-                        if (lastPoll != null && lastPoll.quiz && (button.chosen || button.correct)) {
-                            sb.append(", ").append(button.correct ? LocaleController.getString("AccDescrQuizCorrectAnswer", R.string.AccDescrQuizCorrectAnswer) : LocaleController.getString("AccDescrQuizIncorrectAnswer", R.string.AccDescrQuizIncorrectAnswer));
-                        }
-                    }
-                    info.setText(sb);
-                    final int y = button.y + namesOffset;
-                    final int w = backgroundWidth - AndroidUtilities.dp(76);
-                    rect.set(button.x, y, button.x + w, y + button.height);
-                } else if (virtualViewId == POLL_HINT) {
-                    info.setClassName("android.widget.Button");
-                    info.setText(LocaleController.getString("AccDescrQuizExplanation", R.string.AccDescrQuizExplanation));
-                    rect.set(pollHintX - AndroidUtilities.dp(8), pollHintY - AndroidUtilities.dp(8), pollHintX + AndroidUtilities.dp(32), pollHintY + AndroidUtilities.dp(32));
-                } else if (virtualViewId == INSTANT_VIEW) {
-                    info.setClassName("android.widget.Button");
-                    if (instantViewLayout != null) {
-                        info.setText(instantViewLayout.getText());
-                    }
-                    info.addAction(AccessibilityNodeInfo.ACTION_CLICK);
-                    instantButtonRect.round(rect);
-                } else if (virtualViewId == SHARE) {
-                    info.setClassName("android.widget.ImageButton");
-                    if (isOpenChatByShare(currentMessageObject)) {
-                        info.setContentDescription(LocaleController.getString("AccDescrOpenChat", R.string.AccDescrOpenChat));
-                    } else {
-                        info.setContentDescription(LocaleController.getString("ShareFile", R.string.ShareFile));
-                    }                    rect.set((int) sideStartX, (int) sideStartY, (int) sideStartX + AndroidUtilities.dp(40), (int) sideStartY + AndroidUtilities.dp(32));
-                } else if (virtualViewId == REPLY   ) {
-                    StringBuilder sb = new StringBuilder();
-                    sb.append(LocaleController.getString("Reply", R.string.Reply));
-                    sb.append(", ");
-                    if (replyNameLayout != null) {
-                        sb.append(replyNameLayout.getText());
-                        sb.append(", ");
-                    }
-                    if (replyTextLayout != null) {
-                        sb.append(replyTextLayout.getText());
-                    }
-                    info.setContentDescription(sb.toString());
-                    rect.set(replyStartX, replyStartY, replyStartX + Math.max(replyNameWidth, replyTextWidth), replyStartY + (int) replyHeight);
-                } else if (virtualViewId == FORWARD) {
-                    StringBuilder sb = new StringBuilder();
-                    if (forwardedNameLayout[0] != null && forwardedNameLayout[1] != null) {
-                        for (int a = 0; a < 2; a++) {
-                            sb.append(forwardedNameLayout[a].getText());
-                            sb.append(a == 0 ? " " : "\n");
-                        }
-                    }
-                    info.setContentDescription(sb.toString());
                     int x = (int) Math.min(forwardNameX - forwardNameOffsetX[0], forwardNameX - forwardNameOffsetX[1]);
                     rect.set(x, forwardNameY, x + forwardedNameWidth, forwardNameY + forwardHeight);
-                } else if (virtualViewId == COMMENT) {
-                    info.setClassName("android.widget.Button");
-                    int commentCount = getRepliesCount();
-                    String comment = null;
-                    if (currentMessageObject != null && !currentMessageObject.shouldDrawWithoutBackground() && !currentMessageObject.isAnimatedEmoji()) {
-                        if (isRepliesChat) {
-                            comment = LocaleController.getString("ViewInChat", R.string.ViewInChat);
-                        } else {
-                            comment = commentCount == 0 ? LocaleController.getString("LeaveAComment", R.string.LeaveAComment) : LocaleController.formatPluralString("CommentsCount", commentCount);
+                    } else if (virtualViewId == COMMENT) {
+                        info.setClassName("android.widget.Button");
+                        int commentCount = getRepliesCount();
+                        String comment = null;
+                        if (currentMessageObject != null && !currentMessageObject.shouldDrawWithoutBackground() && !currentMessageObject.isAnimatedEmoji()) {
+                            if (isRepliesChat) {
+                                comment = LocaleController.getString("ViewInChat", R.string.ViewInChat);
+                            } else {
+                                comment = commentCount == 0 ? LocaleController.getString("LeaveAComment", R.string.LeaveAComment) : LocaleController.formatPluralString("CommentsCount", commentCount);
+                            }
+                        } else if (!isRepliesChat && commentCount > 0) {
+                            comment = LocaleController.formatShortNumber(commentCount, null);
                         }
-                    } else if (!isRepliesChat && commentCount > 0) {
-                        comment = LocaleController.formatShortNumber(commentCount, null);
+                        if (comment != null) {
+                            info.setText(comment);
+                        }
+                        rect.set(commentButtonRect);
+                    } else if (virtualViewId == TRANSCRIBE) {
+                        info.setClassName("android.widget.Button");
+                        info.setText(currentMessageObject.isVoiceTranscriptionOpen() ? LocaleController.getString("AccActionCloseTranscription", R.string.AccActionCloseTranscription) : LocaleController.getString("AccActionOpenTranscription", R.string.AccActionOpenTranscription));
+                        rect.set((int) transcribeX, (int) transcribeY, (int) (transcribeX + AndroidUtilities.dp(30)), (int) (transcribeY + AndroidUtilities.dp(30)));
                     }
-                    if (comment != null) {
-                        info.setText(comment);
+                    info.setEnabled(true);
+                    info.setClickable(true);
+                    info.addAction(AccessibilityNodeInfo.ACTION_CLICK);
+                    info.addAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS);
+                    info.setBoundsInParent(rect);
+                    if (accessibilityVirtualViewBounds.get(virtualViewId) == null || !accessibilityVirtualViewBounds.get(virtualViewId).equals(rect)) {
+                        accessibilityVirtualViewBounds.put(virtualViewId, new Rect(rect));
                     }
-                    rect.set(commentButtonRect);
-                } else if (virtualViewId == TRANSCRIBE) {
-                    info.setClassName("android.widget.Button");
-                    info.setText(currentMessageObject.isVoiceTranscriptionOpen() ? LocaleController.getString("AccActionCloseTranscription", R.string.AccActionCloseTranscription) : LocaleController.getString("AccActionOpenTranscription", R.string.AccActionOpenTranscription));
-                    if (transcribeButton != null) {
-                        rect.set((int) transcribeX, (int) transcribeY, (int) (transcribeX + transcribeButton.width()), (int) (transcribeY + transcribeButton.height()));
-                    }
-                }
-                info.setEnabled(true);
-                info.setClickable(true);
-                info.addAction(AccessibilityNodeInfo.ACTION_CLICK);
-                info.addAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS);
-                info.setBoundsInParent(rect);
-                if (accessibilityVirtualViewBounds.get(virtualViewId) == null || !accessibilityVirtualViewBounds.get(virtualViewId).equals(rect)) {
-                    accessibilityVirtualViewBounds.put(virtualViewId, new Rect(rect));
-                }
-                rect.offset(pos[0], pos[1]);
-                info.setBoundsInScreen(rect);
-                info.setFocusable(true);
-                info.setVisibleToUser(true);
-                info.setAccessibilityFocused(true);
-                return info;
+                    rect.offset(pos[0], pos[1]);
+                    info.setBoundsInScreen(rect);
+                    info.setFocusable(true);
+                    info.setVisibleToUser(true);
+                    info.setAccessibilityFocused(true);
+                    return info;
             }
-        }
+    }
 
-        @Override
-        public boolean performAction(int virtualViewId, int action, Bundle arguments) {
+@Override
+public boolean performAction(int virtualViewId, int action, Bundle arguments) {
             if (virtualViewId == HOST_VIEW_ID &&(arguments ==null ||!arguments.getBoolean(actionInList))) {
                 performAccessibilityAction(action, arguments);
             } else {
                 if(action== AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS) {
-                    clear();
+                    clear(virtualViewId);
                     return true;
                 }
                 if(action == AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS) {
@@ -21073,7 +20894,7 @@ else {
             return true;
         }
 
-        private ClickableSpan getLinkById(int id, boolean caption) {
+private ClickableSpan getLinkById(int id, boolean caption) {
             if (id == PROFILE) {
                 return null;
             }
@@ -21576,6 +21397,20 @@ else {
                     changed = true;
                 }
                 accessibilityText = null;
+        isInitializedNodes=false;
+        numberOfNodes =-1;
+        PROFILE = -1;
+        LINK_IDS_START = -1;
+        LINK_CAPTION_IDS_START = -1;
+        BOT_BUTTONS_START = -1;
+        POLL_BUTTONS_START = -1;
+        INSTANT_VIEW = -1;
+        SHARE = -1;
+        REPLY = -1;
+        COMMENT = -1;
+        POLL_HINT = -1;
+        FORWARD = -1;
+        TRANSCRIBE = -1;
             } else if (!edited && lastDrawingEdited && timeLayout != null) {
                 animateTimeLayout = lastTimeLayout;
                 animateEditedWidthDiff = timeWidth - lastTimeWidth;
