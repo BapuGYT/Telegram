@@ -14726,7 +14726,17 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 forwardingPreviewView.dismiss(true);
                 return true;
             }
-            return super.dispatchKeyEvent(event);
+            else if(event.getKeyCode() ==KeyEvent.KEYCODE_CALL &&currentUser!=null)  {
+                if(event.getAction() ==KeyEvent.ACTION_DOWN) {
+                    event.startTracking();
+                    return true;
+                }
+                TLRPC.UserFull userFull = getMessagesController().getUserFull(currentUser.id);
+                if(userFull !=null &&userFull.phone_calls_available &&VoIPService.getSharedInstance() ==null)VoIPHelper.startCall(currentUser, event.getRepeatCount()==1, userInfo != null && userInfo.video_calls_available, getParentActivity(), getMessagesController().getUserFull(currentUser.id), getAccountInstance());
+return true;
+            }
+
+        return super.dispatchKeyEvent(event)    ;
         }
 
         protected Drawable getNewDrawable() {
