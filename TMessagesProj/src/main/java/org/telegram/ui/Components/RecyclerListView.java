@@ -2925,6 +2925,8 @@ public class RecyclerListView extends RecyclerView {
 	}
     @Override
     public boolean performAccessibilityAction(int action, Bundle arguments) {
+        //This code works not always correct,because i dont know,how to get correct coordinate,to scroll to next/previous item,to scroll to it. item.
+        /*
         if(action==AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD ||action==AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) {
 if(getLayoutManager() instanceof GridLayoutManagerFixed) {
     GridLayoutManagerFixed g=(GridLayoutManagerFixed) getLayoutManager();
@@ -2960,6 +2962,7 @@ if(findViewHolderForLayoutPosition(pos)!=null &&findViewHolderForLayoutPosition(
     }
 }
         }
+        */
 return super.performAccessibilityAction(action,arguments);
     }
 }
